@@ -1,0 +1,129 @@
+name: Bug Report
+description: Report a bug or issue with the Gremlin MCP Server
+title: "[Bug]: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting a bug! Please fill out the information below to help us resolve the issue.
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-submission Checklist
+      description: Please verify the following before submitting
+      options:
+        - label: I have searched existing issues to ensure this bug hasn't been reported
+          required: true
+        - label: I have read the troubleshooting section in the README
+          required: true
+        - label: I am using a supported Node.js version (>=18.0.0)
+          required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: A clear and concise description of what the bug is
+      placeholder: Describe what happened and what you expected to happen
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: Detailed steps to reproduce the issue
+      placeholder: |
+        1. Set environment variable GREMLIN_ENDPOINT=...
+        2. Run command '...'
+        3. Execute query '...'
+        4. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What you expected to happen
+      placeholder: Describe the expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happened
+      placeholder: Describe what actually happened instead
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment Information
+      description: Please provide your environment details
+      placeholder: |
+        - OS: [e.g., macOS 14.0, Ubuntu 22.04, Windows 11]
+        - Node.js version: [e.g., 18.19.0]
+        - npm version: [e.g., 10.2.3]
+        - Gremlin MCP Server version: [e.g., 1.0.0]
+        - Gremlin Server: [e.g., TinkerPop 3.7.0, Neptune, Azure Cosmos DB]
+        - MCP Client: [e.g., Claude Desktop, Cursor]
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Error Logs and Output
+      description: Paste any relevant error messages, logs, or output
+      placeholder: |
+        Please include:
+        - Error messages from the MCP server
+        - Gremlin server logs (if accessible)
+        - Console output
+        - Network error messages
+      render: text
+    validations:
+      required: false
+
+  - type: textarea
+    id: configuration
+    attributes:
+      label: Configuration
+      description: Share your MCP server configuration (remove sensitive information)
+      placeholder: |
+        Environment variables:
+        - GREMLIN_ENDPOINT=localhost:8182/g
+        - LOG_LEVEL=debug
+        
+        MCP Client config:
+        ```json
+        {
+          "mcpServers": {
+            "gremlin": {
+              ...
+            }
+          }
+        }
+        ```
+      render: text
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Any additional information that might help resolve the issue
+      placeholder: |
+        - Screenshots
+        - Related issues
+        - Workarounds you've tried
+        - Any other relevant information
+    validations:
+      required: false

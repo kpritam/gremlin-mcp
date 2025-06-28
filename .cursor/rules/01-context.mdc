@@ -1,0 +1,171 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+## Project Overview
+
+This is a TypeScript-based MCP (Model Context Protocol) server that enables AI agents to interact with Gremlin-compatible graph databases. The server provides 6 tools and 2 resources for comprehensive graph database operations.
+
+## Architecture
+
+### Core Components
+
+- **server.ts** - Main MCP server with lazy initialization
+- **gremlin/client.ts** - Gremlin client with connection management and schema caching
+- **handlers/** - Modular MCP request handlers (tools and resources)
+- **config.ts** - Zod-based configuration validation
+- **utils/** - Utility modules for type guards and result parsing
+
+### Available Tools
+
+1. `get_graph_status` - Check database connection status
+2. `get_graph_schema` - Get complete schema with vertex/edge labels and relationship patterns
+3. `run_gremlin_query` - Execute any Gremlin traversal query
+4. `refresh_schema_cache` - Force immediate refresh of cached schema
+5. `import_graph_data` - Import data from GraphSON or CSV formats with batch processing
+6. `export_subgraph` - Export subgraph data to JSON, GraphSON, or CSV formats
+
+### Available Resources
+
+1. `gremlin://status` - Real-time connection status
+2. `gremlin://schema` - Cached schema information (JSON format)
+
+## Development Rules
+
+### MUST Follow RULES.md
+
+Always follow the development rules in `RULES.md` - these are mandatory for all code changes, testing, security, and architecture decisions.
+
+### Code Standards
+
+- Use TypeScript with strict type checking
+- Follow ESLint and Prettier configurations
+- Use Zod for runtime validation
+- Implement comprehensive error handling
+- Write tests for all new functionality
+
+### Testing Requirements
+
+- Use Jest with ts-jest for ESM support
+- Mock external dependencies properly
+- Include integration tests for end-to-end validation
+- Maintain high test coverage
+
+### Key Patterns
+
+- **Type Safety**: Use TypeScript + Zod runtime validation
+- **Modular Design**: Separate handlers for tools, resources, and utilities
+- **Configuration Management**: Zod-based environment variable validation
+- **Error Handling**: Comprehensive try/catch with detailed messages
+- **Generic Gremlin Support**: Compatible with any Gremlin database
+
+## Development Commands
+
+### Essential Commands
+
+```bash
+npm run validate    # Run complete validation (format, lint, type-check, test)
+npm run dev        # Development mode with hot reload
+npm test          # Run all tests
+npm run build     # Compile TypeScript to JavaScript
+```
+
+### Testing Commands
+
+```bash
+npm run test:watch     # Run tests in watch mode
+npm run test:coverage  # Generate test coverage report
+npm run test:it       # Run integration tests (requires GREMLIN_ENDPOINT)
+```
+
+### Code Quality Commands
+
+```bash
+npm run lint          # Run ESLint on source and test files
+npm run lint:fix      # Auto-fix ESLint issues
+npm run format        # Format code with Prettier
+npm run format:check  # Check code formatting
+```
+
+## Environment Variables
+
+Required:
+
+- `GREMLIN_ENDPOINT` - Server endpoint (host:port or host:port/traversal_source)
+
+Optional:
+
+- `GREMLIN_USE_SSL` - Enable SSL/TLS connections (default: false)
+- `GREMLIN_USERNAME` - Authentication username
+- `GREMLIN_PASSWORD` - Authentication password
+- `GREMLIN_IDLE_TIMEOUT` - Connection idle timeout in seconds (default: 300)
+- `LOG_LEVEL` - Logging level: error, warn, info, debug (default: info)
+
+## File Structure Guidelines
+
+### Source Code (`src/`)
+
+- **server.ts** - Main entry point, keep minimal with delegation
+- **config.ts** - All configuration validation, use Zod schemas
+- **constants.ts** - Application constants, tool names, default values
+- **logger.ts** - Winston configuration
+- **gremlin/** - Graph database related code
+  - **client.ts** - Main Gremlin client implementation
+  - **models.ts** - Zod schemas and TypeScript types
+- **handlers/** - MCP request handlers
+  - **index.ts** - Handler registration coordinator
+  - **resources.ts** - Resource handlers
+  - **tools.ts** - Tool handlers
+- **utils/** - Utility modules
+  - **type-guards.ts** - Runtime type checking
+  - **result-parser.ts** - Gremlin result parsing
+  - **result-metadata.ts** - Metadata extraction
+
+### Test Code (`tests/`)
+
+- **setup.ts** - Jest configuration
+- **client.test.ts** - GremlinClient functionality
+- **models.test.ts** - Zod schema validation
+- **exceptions.test.ts** - Error handling
+- **mcp-integration.test.ts** - End-to-end integration
+
+## Common Tasks
+
+### Adding a New Tool
+
+1. Add tool name to `TOOL_NAMES` in `constants.ts`
+2. Define input schema in `gremlin/models.ts` if needed
+3. Implement tool handler in `handlers/tools.ts`
+4. Add tests in appropriate test file
+5. Update documentation
+
+### Adding Configuration
+
+1. Add to Zod schema in `config.ts`
+2. Export from config object
+3. Update environment variable documentation
+4. Add tests for validation
+
+### Debugging
+
+- Set `LOG_LEVEL=debug` for detailed logging
+- Use `npm run test:watch` for test-driven development
+- Check connection with `get_graph_status` tool
+- Verify schema with `get_graph_schema` tool
+
+## Error Handling
+
+- Use `GremlinException` for graph-specific errors
+- Wrap all async operations in try/catch
+- Provide detailed error messages with context
+- Log errors with appropriate levels
+- Return structured error responses for tools
+
+## Performance Considerations
+
+- Use connection pooling with idle timeout management
+- Implement schema caching with configurable refresh
+- Use batch processing for import operations
+- Lazy initialization for graph client
+- Optimize Gremlin queries for large datasets

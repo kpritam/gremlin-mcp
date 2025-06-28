@@ -1,0 +1,59 @@
+# Source files that shouldn't be in the npm package
+src/
+tests/
+.github/
+
+# Development files
+*.test.ts
+*.test.js
+*.spec.ts
+*.spec.js
+jest.config.js
+tsconfig.json
+eslint.config.js
+.eslintrc*
+.prettierrc*
+
+# Build and development directories
+node_modules/
+coverage/
+.nyc_output/
+
+# Development and CI files
+.husky/
+.vscode/
+.idea/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment and configuration
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# Temporary files
+*.tmp
+*.swp
+*.swo
+*~
+
+# Documentation that's not needed in package
+CONTRIBUTING.md
+SECURITY.md
+RULES.md
+examples/
+docs/
+
+# Git files
+.git/
+.gitignore
+.gitattributes
+
+# Misc
+.DS_Store
+Thumbs.db
+schema-visualizer.html

@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 GitHub Discussions
+    url: https://github.com/kpritam/gremlin-mcp-server/discussions
+    about: Ask questions, share ideas, and discuss the project
+  - name: 🔒 Security Vulnerability (Private)
+    url: https://github.com/kpritam/gremlin-mcp-server/security/advisories/new
+    about: Report sensitive security vulnerabilities privately
+  - name: 📖 Documentation
+    url: https://github.com/kpritam/gremlin-mcp-server#readme
+    about: Read the documentation and troubleshooting guide

@@ -1,0 +1,174 @@
+name: Feature Request
+description: Suggest a new feature or enhancement for the Gremlin MCP Server
+title: "[Feature]: "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for suggesting a feature! Please provide as much detail as possible to help us understand your request.
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-submission Checklist
+      description: Please verify the following before submitting
+      options:
+        - label: I have searched existing issues to ensure this feature hasn't been requested
+          required: true
+        - label: I have read the project roadmap and contributing guidelines
+          required: true
+        - label: This feature aligns with the project's goals and scope
+          required: true
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Feature Summary
+      description: A clear and concise summary of the feature you'd like to see
+      placeholder: Brief description of the proposed feature
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: What problem does this feature solve?
+      placeholder: |
+        Describe the problem or limitation that this feature would address:
+        - What current workflow is difficult or impossible?
+        - What use case is not currently supported?
+        - What inefficiency would this address?
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: Describe your proposed solution in detail
+      placeholder: |
+        Describe how you envision this feature working:
+        - How would users interact with this feature?
+        - What new tools, endpoints, or capabilities would be added?
+        - How would this integrate with existing functionality?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: What alternative solutions have you considered?
+      placeholder: |
+        Describe any alternative approaches you've considered:
+        - Different implementation approaches
+        - Workarounds you've tried
+        - Similar features in other tools
+        - Why those alternatives are insufficient
+    validations:
+      required: false
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority Level
+      description: How important is this feature to you?
+      options:
+        - Critical - Blocking current work
+        - High - Would significantly improve workflow
+        - Medium - Nice to have improvement
+        - Low - Minor enhancement
+    validations:
+      required: true
+
+  - type: dropdown
+    id: complexity
+    attributes:
+      label: Estimated Complexity
+      description: How complex do you think this feature would be to implement?
+      options:
+        - Simple - Small addition or configuration change
+        - Medium - New functionality but fits existing patterns
+        - Complex - Major new feature requiring significant changes
+        - Unknown - Not sure about implementation complexity
+    validations:
+      required: true
+
+  - type: textarea
+    id: use-cases
+    attributes:
+      label: Use Cases and Examples
+      description: Provide specific examples of how this feature would be used
+      placeholder: |
+        Example scenarios where this feature would be useful:
+        
+        **Use Case 1:**
+        - User wants to...
+        - They would use this feature by...
+        - The expected outcome is...
+        
+        **Use Case 2:**
+        - In the context of...
+        - This feature would allow...
+        - Benefits include...
+    validations:
+      required: true
+
+  - type: textarea
+    id: implementation
+    attributes:
+      label: Implementation Ideas
+      description: Any technical ideas about how this could be implemented?
+      placeholder: |
+        If you have technical ideas about implementation:
+        - API design suggestions
+        - Architecture considerations
+        - Technologies that might be useful
+        - Integration points with existing code
+        
+        Note: This is optional - we welcome feature requests regardless of technical detail level
+    validations:
+      required: false
+
+  - type: textarea
+    id: mockups
+    attributes:
+      label: Mockups or Wireframes
+      description: Visual representations of the feature (if applicable)
+      placeholder: |
+        If relevant, provide:
+        - Screenshots of similar features in other tools
+        - Wireframes or mockups
+        - Configuration examples
+        - API endpoint examples
+        - Query examples
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Contribution Interest
+      description: Would you be interested in contributing to this feature?
+      options:
+        - label: I would be willing to work on implementing this feature
+        - label: I would be available to help test this feature
+        - label: I would be interested in reviewing the implementation
+        - label: I can provide domain expertise or guidance
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Any other information that would help with this feature request
+      placeholder: |
+        Additional context such as:
+        - Links to relevant documentation
+        - Related features or issues
+        - Timeline considerations
+        - Dependencies or blockers
+        - Community interest or demand
+    validations:
+      required: false

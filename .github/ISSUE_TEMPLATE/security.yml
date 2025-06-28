@@ -1,0 +1,147 @@
+name: Security Vulnerability
+description: Report a security vulnerability (use only for non-sensitive issues)
+title: "[Security]: "
+labels: ["security", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ⚠️ **IMPORTANT SECURITY NOTICE** ⚠️
+        
+        **For sensitive security vulnerabilities, DO NOT use this public issue template.**
+        
+        Instead, please report sensitive security issues through:
+        - GitHub's private Security Advisories (Security tab)
+        - Email to security@your-domain.com (replace with actual email)
+        
+        **Only use this template for:**
+        - Non-sensitive security improvements
+        - Security documentation issues
+        - General security questions
+        - Security feature requests
+
+  - type: checkboxes
+    id: sensitive-check
+    attributes:
+      label: Sensitivity Verification
+      description: Please confirm this is appropriate for a public issue
+      options:
+        - label: This is NOT a sensitive security vulnerability that could be exploited
+          required: true
+        - label: This issue does not contain sensitive information about system internals
+          required: true
+        - label: I understand that sensitive vulnerabilities should be reported privately
+          required: true
+
+  - type: dropdown
+    id: type
+    attributes:
+      label: Security Issue Type
+      description: What type of security-related issue is this?
+      options:
+        - Security documentation improvement
+        - Security feature request
+        - Security configuration question
+        - Non-sensitive security enhancement
+        - Security best practices suggestion
+        - Dependency security update
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Describe the security-related issue or suggestion
+      placeholder: Provide a clear description of the security concern or improvement
+    validations:
+      required: true
+
+  - type: textarea
+    id: current-behavior
+    attributes:
+      label: Current Security Behavior
+      description: How does the system currently handle this security aspect?
+      placeholder: Describe the current security behavior or lack thereof
+    validations:
+      required: false
+
+  - type: textarea
+    id: proposed-improvement
+    attributes:
+      label: Proposed Security Improvement
+      description: What security improvement do you suggest?
+      placeholder: |
+        Describe your proposed security enhancement:
+        - What changes would improve security?
+        - How would this better protect users?
+        - What security best practices would this follow?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: impact
+    attributes:
+      label: Security Impact Level
+      description: What is the potential security impact?
+      options:
+        - Informational - Documentation or awareness
+        - Low - Minor security improvement
+        - Medium - Notable security enhancement
+        - High - Important security feature
+    validations:
+      required: true
+
+  - type: textarea
+    id: standards
+    attributes:
+      label: Security Standards Reference
+      description: Are there relevant security standards or best practices?
+      placeholder: |
+        Reference any relevant:
+        - Security frameworks (OWASP, NIST, etc.)
+        - Industry best practices
+        - Compliance requirements
+        - Security guidelines
+    validations:
+      required: false
+
+  - type: textarea
+    id: implementation
+    attributes:
+      label: Implementation Suggestions
+      description: Any ideas about how to implement this security improvement?
+      placeholder: |
+        Implementation ideas such as:
+        - Configuration changes
+        - Code modifications
+        - Documentation updates
+        - Tool integrations
+        - Process improvements
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Contribution Interest
+      description: Would you be interested in helping with this security improvement?
+      options:
+        - label: I would be willing to work on implementing this improvement
+        - label: I can help review security-related changes
+        - label: I can provide security expertise or guidance
+        - label: I can help with security testing
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Any other relevant information
+      placeholder: |
+        Additional context such as:
+        - Related security issues
+        - External references
+        - Similar implementations
+        - Timeline considerations
+    validations:
+      required: false

@@ -1,6 +1,6 @@
 {
   "name": "@kpritam/gremlin-mcp",
-  "version": "0.0.0-SNAPSHOT",
+  "version": "0.0.11-SNAPSHOT",
   "description": "A Gremlin MCP server that allows for fetching status, schema, and querying using Gremlin for any Gremlin-compatible graph database (TypeScript implementation).",
   "type": "module",
   "main": "dist/server.js",
@@ -24,7 +24,8 @@
     "clean": "rm -rf dist",
     "prepare": "husky",
     "prepublishOnly": "npm run clean && npm run build && npm run validate",
-    "prepack": "npm run build"
+    "prepack": "npm run build",
+    "postinstall": "chmod +x dist/server.js || true"
   },
   "keywords": [
     "mcp",

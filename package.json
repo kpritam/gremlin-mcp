@@ -1,6 +1,6 @@
 {
   "name": "@kpritam/gremlin-mcp",
-  "version": "1.0.0",
+  "version": "0.0.3",
   "description": "A Gremlin MCP server that allows for fetching status, schema, and querying using Gremlin for any Gremlin-compatible graph database (TypeScript implementation).",
   "type": "module",
   "main": "dist/server.js",
@@ -8,7 +8,7 @@
     "gremlin-mcp": "dist/server.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && chmod +x dist/server.js",
     "dev": "tsx src/server.ts",
     "start": "node dist/server.js",
     "test": "jest",

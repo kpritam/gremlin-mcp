@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/kpritam/gremlin-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/kpritam/gremlin-mcp/actions/workflows/ci.yml)
 [![Release](https://github.com/kpritam/gremlin-mcp/actions/workflows/release.yml/badge.svg)](https://github.com/kpritam/gremlin-mcp/actions/workflows/release.yml)
-[![npm version](https://badge.fury.io/js/gremlin-mcp.svg)](https://badge.fury.io/js/gremlin-mcp)
+[![npm version](https://badge.fury.io/js/@kpritam%2Fgremlin-mcp.svg)](https://badge.fury.io/js/@kpritam%2Fgremlin-mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node.js Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen.svg)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8-blue.svg)](https://www.typescriptlang.org/)
@@ -38,7 +38,17 @@ Your AI assistant gets access to these powerful tools:
 
 ## 🚀 Quick Setup
 
-### Step 1: Install and Build
+### Step 1: Install
+
+```bash
+# Install the published package
+npm install -g @kpritam/gremlin-mcp
+
+# Or install locally in your project
+npm install @kpritam/gremlin-mcp
+```
+
+#### Alternative: Build from Source
 
 ```bash
 # Clone and setup
@@ -53,6 +63,41 @@ npm run build
 Add this to your MCP client configuration:
 
 #### Claude Desktop / Cursor / Windsurf
+
+**Using the published package (recommended):**
+
+```json
+{
+  "mcpServers": {
+    "gremlin": {
+      "command": "npx",
+      "args": ["@kpritam/gremlin-mcp"],
+      "env": {
+        "GREMLIN_ENDPOINT": "localhost:8182",
+        "LOG_LEVEL": "info"
+      }
+    }
+  }
+}
+```
+
+**Or if installed globally:**
+
+```json
+{
+  "mcpServers": {
+    "gremlin": {
+      "command": "gremlin-mcp",
+      "env": {
+        "GREMLIN_ENDPOINT": "localhost:8182",
+        "LOG_LEVEL": "info"
+      }
+    }
+  }
+}
+```
+
+**From source:**
 
 ```json
 {
@@ -75,8 +120,8 @@ Add this to your MCP client configuration:
 {
   "mcpServers": {
     "gremlin": {
-      "command": "node",
-      "args": ["/path/to/gremlin-mcp/dist/server.js"],
+      "command": "npx",
+      "args": ["@kpritam/gremlin-mcp"],
       "env": {
         "GREMLIN_ENDPOINT": "your-server.com:8182",
         "GREMLIN_USERNAME": "your-username",

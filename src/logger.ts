@@ -36,7 +36,7 @@ function createLogger(logLevel: string): winston.Logger {
   return winston.createLogger({
     level: logLevel,
     format: winston.format.combine(baseFormat, winston.format.json()),
-    defaultMeta: { service: 'gremlin-mcp-server' },
+    defaultMeta: { service: 'gremlin-mcp' },
     transports: [
       new winston.transports.Console({
         stderrLevels: ['error', 'warn', 'info', 'debug'],

@@ -3,7 +3,7 @@
  */
 
 // Server Information
-export const SERVER_NAME = 'gremlin-mcp-server';
+export const SERVER_NAME = 'gremlin-mcp';
 export const SERVER_VERSION = '1.0.0';
 
 // MCP Resource URIs
@@ -29,7 +29,7 @@ export const DEFAULTS = {
   TRAVERSAL_SOURCE: 'g',
   USE_SSL: false,
   LOG_LEVEL: 'info' as const,
-  SERVER_NAME: 'gremlin-mcp-server',
+  SERVER_NAME: 'gremlin-mcp',
   SERVER_VERSION: '1.0.0',
   IDLE_TIMEOUT_SECONDS: 300,
 } as const;

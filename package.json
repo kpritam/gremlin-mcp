@@ -1,11 +1,11 @@
 {
-  "name": "gremlin-mcp-server",
+  "name": "@kpritam/gremlin-mcp",
   "version": "1.0.0",
   "description": "A Gremlin MCP server that allows for fetching status, schema, and querying using Gremlin for any Gremlin-compatible graph database (TypeScript implementation).",
   "type": "module",
   "main": "dist/server.js",
   "bin": {
-    "gremlin-mcp-server": "dist/server.js"
+    "gremlin-mcp": "dist/server.js"
   },
   "scripts": {
     "build": "tsc",
@@ -66,12 +66,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/kpritam/gremlin-mcp-server.git"
+    "url": "https://github.com/kpritam/gremlin-mcp.git"
   },
   "bugs": {
-    "url": "https://github.com/kpritam/gremlin-mcp-server/issues"
+    "url": "https://github.com/kpritam/gremlin-mcp/issues"
   },
-  "homepage": "https://github.com/kpritam/gremlin-mcp-server#readme",
+  "homepage": "https://github.com/kpritam/gremlin-mcp#readme",
   "files": [
     "dist/",
     "README.md",

@@ -20,8 +20,8 @@ By participating in this project, you agree to abide by our [Code of Conduct](CO
 1. Fork the repository on GitHub
 2. Clone your fork locally:
    ```bash
-   git clone https://github.com/kpritam/gremlin-mcp-server.git
-   cd gremlin-mcp-server
+   git clone https://github.com/kpritam/gremlin-mcp.git
+   cd gremlin-mcp
    ```
 3. Install dependencies:
    ```bash

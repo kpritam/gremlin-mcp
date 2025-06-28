@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/kpritam/gremlin-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/kpritam/gremlin-mcp/actions/workflows/ci.yml)
 [![Release](https://github.com/kpritam/gremlin-mcp/actions/workflows/release.yml/badge.svg)](https://github.com/kpritam/gremlin-mcp/actions/workflows/release.yml)
-[![npm version](https://badge.fury.io/js/gremlin-mcp-server.svg)](https://badge.fury.io/js/gremlin-mcp-server)
+[![npm version](https://badge.fury.io/js/gremlin-mcp.svg)](https://badge.fury.io/js/gremlin-mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node.js Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen.svg)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8-blue.svg)](https://www.typescriptlang.org/)
@@ -42,8 +42,8 @@ Your AI assistant gets access to these powerful tools:
 
 ```bash
 # Clone and setup
-git clone https://github.com/kpritam/gremlin-mcp-server.git
-cd gremlin-mcp-server
+git clone https://github.com/kpritam/gremlin-mcp.git
+cd gremlin-mcp
 npm install
 npm run build
 ```
@@ -59,7 +59,7 @@ Add this to your MCP client configuration:
   "mcpServers": {
     "gremlin": {
       "command": "node",
-      "args": ["/path/to/gremlin-mcp-server/dist/server.js"],
+      "args": ["/path/to/gremlin-mcp/dist/server.js"],
       "env": {
         "GREMLIN_ENDPOINT": "localhost:8182",
         "LOG_LEVEL": "info"
@@ -76,7 +76,7 @@ Add this to your MCP client configuration:
   "mcpServers": {
     "gremlin": {
       "command": "node",
-      "args": ["/path/to/gremlin-mcp-server/dist/server.js"],
+      "args": ["/path/to/gremlin-mcp/dist/server.js"],
       "env": {
         "GREMLIN_ENDPOINT": "your-server.com:8182",
         "GREMLIN_USERNAME": "your-username",
@@ -369,7 +369,7 @@ GREMLIN_SCHEMA_MAX_ENUM_VALUES="10"           # Limit enum values shown
 curl -f http://localhost:8182/
 
 # Check server logs
-tail -f logs/gremlin-mcp-server.log
+tail -f logs/gremlin-mcp.log
 
 # Verify schema endpoint
 curl http://localhost:8182/gremlin
@@ -385,8 +385,8 @@ _The following sections are for developers who want to contribute to or modify t
 
 ```bash
 # Clone and install
-git clone https://github.com/kpritam/gremlin-mcp-server.git
-cd gremlin-mcp-server
+git clone https://github.com/kpritam/gremlin-mcp.git
+cd gremlin-mcp
 npm install
 
 # Development with hot reload
@@ -481,4 +481,4 @@ MIT License - feel free to use in your projects!
 
 ---
 
-**Questions?** Check the [troubleshooting guide](#🆘-troubleshooting) or [open an issue](https://github.com/kpritam/gremlin-mcp-server/issues).
+**Questions?** Check the [troubleshooting guide](#🆘-troubleshooting) or [open an issue](https://github.com/kpritam/gremlin-mcp/issues).

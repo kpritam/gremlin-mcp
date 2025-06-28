@@ -99,7 +99,15 @@ jobs:
       run: npm run build
 
     - name: Publish to npm
-      run: npm publish --provenance --access public
+      run: |
+        TAG_VERSION="${{ steps.version.outputs.VERSION }}"
+        if [[ "$TAG_VERSION" =~ ^0\.0\. ]]; then
+          # Publish snapshot versions to dev tag
+          npm publish --provenance --access public --tag dev
+        else
+          # Publish stable versions to latest tag
+          npm publish --provenance --access public
+        fi
       env:
         NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 

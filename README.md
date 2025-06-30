@@ -41,11 +41,8 @@ Your AI assistant gets access to these powerful tools:
 ### Step 1: Install
 
 ```bash
-# Install the published package
-npm install -g @kpritam/gremlin-mcp
-
-# Or install locally in your project
-npm install @kpritam/gremlin-mcp
+# The npx command will automatically install the package if needed
+# No separate installation step required
 ```
 
 #### Alternative: Build from Source
@@ -72,22 +69,6 @@ Add this to your MCP client configuration:
     "gremlin": {
       "command": "npx",
       "args": ["@kpritam/gremlin-mcp"],
-      "env": {
-        "GREMLIN_ENDPOINT": "localhost:8182",
-        "LOG_LEVEL": "info"
-      }
-    }
-  }
-}
-```
-
-**Or if installed globally:**
-
-```json
-{
-  "mcpServers": {
-    "gremlin": {
-      "command": "gremlin-mcp",
       "env": {
         "GREMLIN_ENDPOINT": "localhost:8182",
         "LOG_LEVEL": "info"

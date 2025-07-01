@@ -1,7 +1,8 @@
 /**
- * Configuration module for Gremlin MCP Server.
+ * Configuration module for Gremlin MCP Server using Effect Config.
  */
 
+import { Config, Effect, pipe } from 'effect';
 import { z } from 'zod';
 import { DEFAULTS } from './constants.js';
 
@@ -48,8 +49,112 @@ function parseEndpoint(endpoint: string): { host: string; port: number; traversa
 }
 
 /**
- * Comprehensive configuration schema with flattened structure.
- * Validates environment variables and transforms them into a clean config object.
+ * Effect Config definitions for all configuration values
+ */
+const GremlinEndpointConfig = pipe(Config.string('GREMLIN_ENDPOINT'), Config.map(parseEndpoint));
+
+const GremlinUseSslConfig = pipe(
+  Config.string('GREMLIN_USE_SSL'),
+  Config.withDefault(String(DEFAULTS.USE_SSL)),
+  Config.map(parseBooleanValue)
+);
+
+const GremlinUsernameConfig = Config.option(Config.string('GREMLIN_USERNAME'));
+const GremlinPasswordConfig = Config.option(Config.redacted('GREMLIN_PASSWORD'));
+
+const LogLevelConfig = pipe(
+  Config.literal('error', 'warn', 'info', 'debug')('LOG_LEVEL'),
+  Config.withDefault(DEFAULTS.LOG_LEVEL)
+);
+
+const GremlinIdleTimeoutConfig = pipe(
+  Config.string('GREMLIN_IDLE_TIMEOUT'),
+  Config.withDefault('300'),
+  Config.map(val => parseInt(val, 10))
+);
+
+const GremlinEnumDiscoveryEnabledConfig = pipe(
+  Config.string('GREMLIN_ENUM_DISCOVERY_ENABLED'),
+  Config.withDefault('true'),
+  Config.map(parseBooleanValue)
+);
+
+const GremlinEnumCardinalityThresholdConfig = pipe(
+  Config.string('GREMLIN_ENUM_CARDINALITY_THRESHOLD'),
+  Config.withDefault('10'),
+  Config.map(val => parseInt(val, 10))
+);
+
+const GremlinEnumPropertyBlacklistConfig = pipe(
+  Config.string('GREMLIN_ENUM_PROPERTY_BLACKLIST'),
+  Config.withDefault(
+    'id,pk,name,description,startDate,endDate,arrival,departure,timestamp,createdAt,updatedAt'
+  ),
+  Config.map(val => val.split(',').map(s => s.trim()))
+);
+
+const GremlinSchemaIncludeSampleValuesConfig = pipe(
+  Config.string('GREMLIN_SCHEMA_INCLUDE_SAMPLE_VALUES'),
+  Config.withDefault('false'),
+  Config.map(parseBooleanValue)
+);
+
+const GremlinSchemaMaxEnumValuesConfig = pipe(
+  Config.string('GREMLIN_SCHEMA_MAX_ENUM_VALUES'),
+  Config.withDefault('10'),
+  Config.map(val => parseInt(val, 10))
+);
+
+const GremlinSchemaIncludeCountsConfig = pipe(
+  Config.string('GREMLIN_SCHEMA_INCLUDE_COUNTS'),
+  Config.withDefault('true'),
+  Config.map(parseBooleanValue)
+);
+
+/**
+ * Complete configuration combining all individual configs
+ */
+export const AppConfig = Config.all({
+  endpoint: GremlinEndpointConfig,
+  gremlinUseSSL: GremlinUseSslConfig,
+  gremlinUsername: GremlinUsernameConfig,
+  gremlinPassword: GremlinPasswordConfig,
+  logLevel: LogLevelConfig,
+  gremlinIdleTimeout: GremlinIdleTimeoutConfig,
+  gremlinEnumDiscoveryEnabled: GremlinEnumDiscoveryEnabledConfig,
+  gremlinEnumCardinalityThreshold: GremlinEnumCardinalityThresholdConfig,
+  gremlinEnumPropertyBlacklist: GremlinEnumPropertyBlacklistConfig,
+  gremlinSchemaIncludeSampleValues: GremlinSchemaIncludeSampleValuesConfig,
+  gremlinSchemaMaxEnumValues: GremlinSchemaMaxEnumValuesConfig,
+  gremlinSchemaIncludeCounts: GremlinSchemaIncludeCountsConfig,
+}).pipe(
+  Config.map(config => ({
+    // Gremlin connection config
+    gremlinHost: config.endpoint.host,
+    gremlinPort: config.endpoint.port,
+    gremlinTraversalSource: config.endpoint.traversalSource,
+    gremlinUseSSL: config.gremlinUseSSL,
+    gremlinUsername: config.gremlinUsername,
+    gremlinPassword: config.gremlinPassword,
+    gremlinIdleTimeout: config.gremlinIdleTimeout,
+    gremlinEnumDiscoveryEnabled: config.gremlinEnumDiscoveryEnabled,
+    gremlinEnumCardinalityThreshold: config.gremlinEnumCardinalityThreshold,
+    gremlinEnumPropertyBlacklist: config.gremlinEnumPropertyBlacklist,
+    gremlinSchemaIncludeSampleValues: config.gremlinSchemaIncludeSampleValues,
+    gremlinSchemaMaxEnumValues: config.gremlinSchemaMaxEnumValues,
+    gremlinSchemaIncludeCounts: config.gremlinSchemaIncludeCounts,
+
+    // Server config
+    serverName: DEFAULTS.SERVER_NAME,
+    serverVersion: DEFAULTS.SERVER_VERSION,
+
+    // Logging config
+    logLevel: config.logLevel,
+  }))
+);
+
+/**
+ * Backward compatibility: Zod schema for runtime validation (kept for compatibility)
  */
 const configSchema = z
   .object({
@@ -108,10 +213,20 @@ const configSchema = z
     };
   });
 
+export type AppConfigType = Effect.Effect.Success<typeof AppConfig>;
+
+/**
+ * Backward compatibility config export
+ */
 export type Config = z.infer<typeof configSchema>;
 
 /**
- * Validated and transformed configuration object.
+ * Validated and transformed configuration object (backward compatibility).
  * Parsed once during module initialization for efficiency.
  */
 export const config = configSchema.parse(process.env);
+
+/**
+ * Effect for getting the configuration
+ */
+export const getConfig = Effect.succeed(config);

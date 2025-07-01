@@ -36,41 +36,57 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Architecture
 
+### Implementation Status
+
+This project is implemented using **Effect.ts** functional programming patterns throughout:
+
+- **Current Implementation**: Effect.ts-based functional programming approach
+- **Architecture**: Composable, type-safe effects with dependency injection and service patterns
+- **Paradigm**: Immutable state management with Effect's composable error handling
+
 ### Core Components
 
-**server.ts** - Main MCP server implementation using the official @modelcontextprotocol/sdk. Handles:
+**server.ts** - Effect-based MCP server implementation using @modelcontextprotocol/sdk:
 
-- Lazy initialization of Gremlin connection via getGraphClient()
-- Server configuration using parseServerConfig()
-- Delegates to specialized handlers for resources and tools
-- Graceful shutdown with SIGINT/SIGTERM handling
+- Effect service definitions with Context.Tag patterns for dependency injection
+- Graceful startup/shutdown using Effect composition and fiber management
+- Layer-based dependency resolution with service composition
+- Signal handling using Effect's functional approach
 
-**gremlin/client.ts** - Gremlin client for graph operations:
+**gremlin/service.ts** - Effect-based Gremlin service for graph operations:
 
-- GremlinClient class with comprehensive graph database functionality
-- Compatible with any Gremlin-enabled database (TinkerPop, Neptune, etc.)
-- Connection management with idle timeout and retry logic
-- Schema caching with automatic refresh
-- Methods: getStatus(), executeGremlinQuery(), getSchema(), refreshSchemaCache()
+- GremlinService using modern Effect.ts Context.Tag service pattern
+- Ref-based state management for connections and schema caching
+- Composable Effect operations for all graph database interactions
+- Methods: getStatus, getSchema, refreshSchemaCache, executeQuery, healthCheck
 
-**config.ts** - Centralized configuration parsing and validation:
+**gremlin/schema-service.ts** - Effect-based schema management service:
 
-- Zod-based environment variable schema with runtime validation
-- Direct property access with type safety (config.gremlinHost, config.gremlinPort)
-- Automatic type coercion and sensible defaults
-- Exported config object for validated configuration throughout the application
+- SchemaService extending Effect.Service with proper service definition
+- Dependency injection of GremlinService through Effect's service system
+- Cached schema operations with Effect state management
 
-**handlers/** - Modular request handlers:
+**config.ts** - Effect-based configuration management:
 
-- **index.ts** - Handler registration coordinator
-- **resources.ts** - MCP resource handlers (status, schema)
-- **tools.ts** - MCP tool handlers (6 tools: get_graph_status, get_graph_schema, run_gremlin_query, refresh_schema_cache, import_graph_data, export_subgraph)
+- Effect Config system for environment variable parsing and validation
+- Type-safe configuration with Effect.Config.all composition
+- Automatic parsing, validation, and transformation using Effect patterns
+- Exported AppConfig as Effect for use throughout the application
+
+**handlers/** - Effect-based modular request handlers:
+
+- **resources.ts** - Effect-based MCP resource handlers using pipe and service injection
+- **tools.ts** - Effect-based MCP tool handlers with createEffectTool helpers
+- **runtime-context.ts** - ManagedRuntime container for Effect execution in MCP handlers
 
 **utils/** - Utility modules:
 
 - **type-guards.ts** - Runtime type checking functions for Gremlin results
 - **result-parser.ts** - Gremlin result parsing with metadata extraction
 - **result-metadata.ts** - Metadata extraction from Gremlin query results
+- **effect-tool-helpers.ts** - Effect-based tool creation helpers for MCP integration
+- **tool-helpers.ts** - Legacy tool helpers (Effect.ts based)
+- **data-operations.ts** - Effect-based graph data import/export operations
 
 **constants.ts** - Application constants:
 
@@ -85,11 +101,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - GremlinQueryResult for query responses
 - ImportDataInput and ExportSubgraphInput for data operations
 
-**logger.ts** - Enhanced Winston configuration:
+**errors.ts** - Effect-based error management:
 
-- Uses validated config.logLevel from Zod schema
-- Conditional formatting based on log level
-- Cleaner transport setup
+- Custom error classes for different error types (GremlinConnectionError, GremlinQueryError, etc.)
+- Effect-compatible error handling with proper error types
+- Structured error creation with context and cause information
 
 ### Available MCP Tools (6 tools)
 
@@ -107,23 +123,29 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Key Patterns
 
-**Modular Architecture**: Code is organized into focused modules with single responsibilities.
+**Effect.ts Functional Programming**: All operations use Effect's composable, type-safe approach to side effects and error handling.
 
-**Type Safety**: Comprehensive TypeScript types with runtime validation via Zod schemas.
+**Service-Oriented Architecture**: Dependencies managed through Effect's Context.Tag and service injection patterns.
 
-**Configuration Management**: Zod-based environment variable validation with runtime type checking, automatic defaults, and centralized config export.
+**Layer-Based Composition**: Application built using Effect.Layer for dependency resolution and service composition.
 
-**Handler Separation**: MCP handlers are extracted into separate modules for better organization.
+**Immutable State Management**: All state changes handled through Effect.Ref for thread-safe, immutable updates.
 
-**Utility Modules**: Common functionality extracted into reusable utility modules.
+**Type Safety**: Comprehensive TypeScript types with runtime validation via Zod schemas and Effect's type system.
 
-**Constants**: Default values and magic strings extracted into constants, integrated with Zod schemas for type-safe defaults.
+**Configuration Management**: Effect.Config-based environment variable validation with composable configuration parsing.
 
-**Modern TypeScript**: Uses contemporary TypeScript patterns and idiomatic conventions.
+**Handler Separation**: MCP handlers use Effect composition with proper error handling and service injection.
 
-**Generic Gremlin Support**: Code is designed to work with any Gremlin-compatible database, not just TinkerPop. Use `GremlinClient`, `GremlinConfig`, and `GremlinException` - no legacy TinkerPop-specific naming.
+**Utility Modules**: Effect-based utility functions for common graph operations and data transformations.
 
-**Data Operations**: Comprehensive import/export functionality with support for multiple formats and batch processing.
+**Constants**: Application constants integrated with Effect configuration and schema systems.
+
+**Modern Effect.ts Patterns**: Uses latest Effect 3.16.10 patterns including Context.Tag services and Layer composition.
+
+**Generic Gremlin Support**: Effect-based abstractions work with any Gremlin-compatible database (TinkerPop, Neptune, etc.).
+
+**Data Operations**: Effect-based import/export functionality with composable batch processing and error handling.
 
 ### Testing Setup
 
@@ -164,14 +186,15 @@ All environment variables are validated through Zod schemas:
 
 ### Error Handling
 
-- **GremlinException** - Custom exception class with modern TypeScript patterns
-- **Comprehensive error handling** - All operations wrapped with try/catch
-- **Graceful degradation** - Schema operations fall back to cached data when possible
-- **Detailed error messages** - Include context and troubleshooting information
+- **Effect-based Error Types** - Custom error classes (GremlinConnectionError, GremlinQueryError, etc.) with Effect compatibility
+- **Composable Error Handling** - All operations use Effect.catchAll and Effect.either for structured error management
+- **Graceful Degradation** - Schema operations fall back to cached data using Effect.orElse patterns
+- **Detailed Error Context** - Errors include structured context and cause information for troubleshooting
 
 ### Performance Considerations
 
-- **Connection pooling** - Single connection with idle timeout management
-- **Schema caching** - Cached schema with configurable refresh intervals
-- **Batch processing** - Import operations use configurable batch sizes
-- **Lazy initialization** - Graph client created only when needed
+- **Effect.Ref State Management** - Thread-safe connection state with Effect.Ref for concurrent access
+- **Schema Caching** - Effect-based cached schema with configurable refresh intervals using Ref
+- **Batch Processing** - Effect-based import operations with composable batch processing
+- **Lazy Service Initialization** - Services created only when needed through Effect's Layer system
+- **Resource Management** - Automatic cleanup using Effect.addFinalizer and managed runtimes

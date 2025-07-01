@@ -21,8 +21,74 @@ function hasConstructorName(
     obj !== null &&
     typeof obj === 'object' &&
     'constructor' in obj &&
-    (obj as { constructor?: { name?: string } }).constructor?.name === name
+    typeof obj.constructor === 'function' &&
+    obj.constructor.name === name
   );
+}
+
+/**
+ * Type guard and interface for raw vertex objects
+ */
+interface RawVertex {
+  id: unknown;
+  label: string;
+  properties?: unknown;
+}
+
+function isRawVertex(obj: unknown): obj is RawVertex {
+  return (
+    obj !== null &&
+    typeof obj === 'object' &&
+    'id' in obj &&
+    'label' in obj &&
+    typeof obj.label === 'string'
+  );
+}
+
+/**
+ * Type guard and interface for raw edge objects
+ */
+interface RawEdge {
+  id: unknown;
+  label: string;
+  inV?: unknown;
+  outV?: unknown;
+  properties?: unknown;
+}
+
+function isRawEdge(obj: unknown): obj is RawEdge {
+  return (
+    obj !== null &&
+    typeof obj === 'object' &&
+    'id' in obj &&
+    'label' in obj &&
+    typeof obj.label === 'string'
+  );
+}
+
+/**
+ * Type guard and interface for raw path objects
+ */
+interface RawPath {
+  labels?: unknown;
+  objects?: unknown;
+}
+
+function isRawPath(obj: unknown): obj is RawPath {
+  return obj !== null && typeof obj === 'object';
+}
+
+/**
+ * Type guard and interface for raw property objects
+ */
+interface RawProperty {
+  key?: string;
+  label?: string;
+  value: unknown;
+}
+
+function isRawProperty(obj: unknown): obj is RawProperty {
+  return obj !== null && typeof obj === 'object' && 'value' in obj;
 }
 
 /**
@@ -40,36 +106,29 @@ const GremlinPreprocessedResultSchema = z.preprocess((arg: unknown) => {
 
   // Handle native Gremlin structure types by checking their constructor name
   // and transforming them into plain objects with a 'type' discriminator.
-  if (hasConstructorName(arg, 'Vertex')) {
-    const rawVertex = arg as { id: unknown; label: string; properties?: unknown };
-    return { ...rawVertex, type: 'vertex' };
+  if (hasConstructorName(arg, 'Vertex') && isRawVertex(arg)) {
+    return { ...arg, type: 'vertex' };
   }
 
-  if (hasConstructorName(arg, 'Edge')) {
-    const rawEdge = arg as {
-      id: unknown;
-      label: string;
-      inV?: unknown;
-      outV?: unknown;
-      properties?: unknown;
-    };
-    return { ...rawEdge, type: 'edge' };
+  if (hasConstructorName(arg, 'Edge') && isRawEdge(arg)) {
+    return { ...arg, type: 'edge' };
   }
 
-  if (hasConstructorName(arg, 'Path')) {
-    const rawPath = arg as { labels?: unknown; objects?: unknown };
+  if (hasConstructorName(arg, 'Path') && isRawPath(arg)) {
     return {
-      labels: Array.isArray(rawPath.labels) ? rawPath.labels.map(String) : [],
-      objects: rawPath.objects,
+      labels: Array.isArray(arg.labels) ? arg.labels.map(String) : [],
+      objects: arg.objects,
       type: 'path',
     };
   }
 
-  if (hasConstructorName(arg, 'Property') || hasConstructorName(arg, 'VertexProperty')) {
-    const rawProp = arg as { key?: string; label?: string; value: unknown };
+  if (
+    (hasConstructorName(arg, 'Property') || hasConstructorName(arg, 'VertexProperty')) &&
+    isRawProperty(arg)
+  ) {
     return {
-      key: rawProp.key || rawProp.label || '',
-      value: rawProp.value,
+      key: arg.key || arg.label || '',
+      value: arg.value,
       type: 'property',
     };
   }
@@ -82,11 +141,11 @@ const GremlinPreprocessedResultSchema = z.preprocess((arg: unknown) => {
   // If a generic object looks like a vertex or edge (e.g., from a different driver
   // or a simple JSON response), add the 'type' discriminator to help Zod parse it.
   if ('id' in arg && 'label' in arg) {
-    if ('properties' in arg && !('inV' in arg) && !('outV' in arg)) {
-      return { ...(arg as object), type: 'vertex' };
+    if ('properties' in arg && !('inV' in arg) && !('outV' in arg) && isRawVertex(arg)) {
+      return { ...arg, type: 'vertex' };
     }
-    if ('inV' in arg && 'outV' in arg) {
-      return { ...(arg as object), type: 'edge' };
+    if ('inV' in arg && 'outV' in arg && isRawEdge(arg)) {
+      return { ...arg, type: 'edge' };
     }
   }
 

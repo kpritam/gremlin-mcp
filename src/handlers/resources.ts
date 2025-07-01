@@ -1,77 +1,104 @@
 /**
- * MCP Resource handlers for Gremlin server.
+ * Effect-based MCP Resource handlers for Gremlin server.
+ * Uses proper dependency injection instead of global runtime container.
  */
 
+import { Effect, pipe } from 'effect';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { RESOURCE_URIS, MIME_TYPES } from '../constants.js';
-import { logger } from '../logger.js';
-import type { GremlinClient } from '../gremlin/client.js';
+import { GremlinService } from '../gremlin/service.js';
+import { fromError } from '../errors.js';
+import { type EffectMcpBridge } from './effect-runtime-bridge.js';
 
 /**
- * Register resource handlers with the MCP server.
- *
- * @param server - The MCP server instance
- * @param getGraphClient - Function to get the Gremlin client instance
+ * Register Effect-based resource handlers with the MCP server.
+ * Uses dependency-injected runtime instead of global container.
  */
-export function registerResourceHandlers(
+export function registerEffectResourceHandlers(
   server: McpServer,
-  getGraphClient: () => Promise<GremlinClient>
+  bridge: EffectMcpBridge<GremlinService>
 ): void {
-  // Register graph status resource
-  server.registerResource(
-    'graph-status',
+  // Register status resource
+  server.resource(
+    'Gremlin Graph Status',
     RESOURCE_URIS.STATUS,
     {
-      title: 'Graph Status',
-      description: 'Get the status of the currently configured Gremlin graph',
+      description: 'Real-time connection status of the Gremlin graph database',
       mimeType: MIME_TYPES.TEXT_PLAIN,
     },
-    async (uri: URL) => {
+    async () => {
       try {
-        const graphClient = await getGraphClient();
-        const status = await graphClient.getStatus();
+        const result = await bridge.runEffect(
+          pipe(
+            GremlinService,
+            Effect.flatMap(service => service.getStatus),
+            Effect.catchAll(error => Effect.succeed(`Connection error: ${error.message}`))
+          )
+        );
+
         return {
           contents: [
             {
-              uri: uri.href,
+              uri: RESOURCE_URIS.STATUS,
               mimeType: MIME_TYPES.TEXT_PLAIN,
-              text: status,
+              text: result,
             },
           ],
         };
       } catch (error) {
-        logger.error('Error reading graph status resource', { uri: uri.href, error });
-        throw error;
+        const mcpError = fromError(error, 'Status resource');
+        return {
+          contents: [
+            {
+              uri: RESOURCE_URIS.STATUS,
+              mimeType: MIME_TYPES.TEXT_PLAIN,
+              text: `Error: ${mcpError.message}`,
+            },
+          ],
+        };
       }
     }
   );
 
-  // Register graph schema resource
-  server.registerResource(
-    'graph-schema',
+  // Register schema resource
+  server.resource(
+    'Gremlin Graph Schema',
     RESOURCE_URIS.SCHEMA,
     {
-      title: 'Graph Schema',
       description:
-        'Get the schema for the graph including the vertex and edge labels as well as the (vertex)-[edge]->(vertex) combinations',
+        'Complete schema of the graph including vertex labels, edge labels, and relationship patterns',
       mimeType: MIME_TYPES.APPLICATION_JSON,
     },
-    async (uri: URL) => {
+    async () => {
       try {
-        const graphClient = await getGraphClient();
-        const schema = await graphClient.getSchema();
+        const result = await bridge.runEffect(
+          pipe(
+            GremlinService,
+            Effect.flatMap(service => service.getSchema),
+            Effect.catchAll(error => Effect.succeed({ error: error.message }))
+          )
+        );
+
         return {
           contents: [
             {
-              uri: uri.href,
+              uri: RESOURCE_URIS.SCHEMA,
               mimeType: MIME_TYPES.APPLICATION_JSON,
-              text: JSON.stringify(schema, null, 2),
+              text: JSON.stringify(result, null, 2),
             },
           ],
         };
       } catch (error) {
-        logger.error('Error reading graph schema resource', { uri: uri.href, error });
-        throw error;
+        const mcpError = fromError(error, 'Schema resource');
+        return {
+          contents: [
+            {
+              uri: RESOURCE_URIS.SCHEMA,
+              mimeType: MIME_TYPES.APPLICATION_JSON,
+              text: JSON.stringify({ error: mcpError.message }, null, 2),
+            },
+          ],
+        };
       }
     }
   );

@@ -40,8 +40,11 @@
   },
   "license": "MIT",
   "dependencies": {
+    "@effect/platform": "^0.87.1",
+    "@effect/platform-node": "^0.88.3",
     "@modelcontextprotocol/sdk": "^1.13.0",
     "@types/gremlin": "^3.6.7",
+    "effect": "3.16.10",
     "gremlin": "^3.7.3",
     "winston": "^3.17.0",
     "zod": "^3.25.67"

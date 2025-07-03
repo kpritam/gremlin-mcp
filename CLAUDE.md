@@ -66,12 +66,13 @@ This project is implemented using **Effect.ts** functional programming patterns 
 - Dependency injection of GremlinService through Effect's service system
 - Cached schema operations with Effect state management
 
-**config.ts** - Effect-based configuration management:
+**config.ts** - Pure Effect-based configuration management:
 
-- Effect Config system for environment variable parsing and validation
-- Type-safe configuration with Effect.Config.all composition
+- Effect.Config system for type-safe environment variable parsing and validation
+- Composable configuration with Effect.Config.all for combining multiple config sources
 - Automatic parsing, validation, and transformation using Effect patterns
-- Exported AppConfig as Effect for use throughout the application
+- Single source of truth with no backward compatibility layers
+- Exports only AppConfig Effect and AppConfigType for clean architecture
 
 **handlers/** - Effect-based modular request handlers:
 
@@ -151,12 +152,10 @@ This project is implemented using **Effect.ts** functional programming patterns 
 
 Tests use Jest with ts-jest for ESM support. Setup file at tests/setup.ts configures test environment. Coverage collection from src/ directory excluding .d.ts files. Comprehensive mocking for Gremlin dependencies.
 
-**Test Suites (4 suites, 43 tests total)**:
+**Test Suites**:
 
-- **tests/client.test.ts** - GremlinClient functionality with comprehensive mocking (16 tests)
-- **tests/models.test.ts** - Zod schema validation and type checking (16 tests)
-- **tests/exceptions.test.ts** - Error handling and exception classes (5 tests)
-- **tests/mcp-integration.test.ts** - End-to-end MCP server integration (6 tests)
+- **tests/config.test.ts** - Effect-based configuration management and validation
+- **tests/models.test.ts** - Zod schema validation and type checking
 
 **Integration Testing**: `tests/mcp-integration.test.ts` provides comprehensive validation against real Gremlin servers:
 
@@ -175,7 +174,7 @@ Prerequisites for integration tests:
 
 ### Environment Variables
 
-All environment variables are validated through Zod schemas:
+All environment variables are validated through Effect.Config:
 
 - **GREMLIN_ENDPOINT** (required) - Server endpoint (host:port or host:port/traversal_source)
 - **GREMLIN_USE_SSL** (optional) - Enable SSL/TLS connections (default: false)

@@ -3,7 +3,6 @@
  */
 
 import { Config, Effect, pipe } from 'effect';
-import { z } from 'zod';
 import { DEFAULTS } from './constants.js';
 
 /**
@@ -153,80 +152,4 @@ export const AppConfig = Config.all({
   }))
 );
 
-/**
- * Backward compatibility: Zod schema for runtime validation (kept for compatibility)
- */
-const configSchema = z
-  .object({
-    GREMLIN_ENDPOINT: z.string().min(1, 'GREMLIN_ENDPOINT is required'),
-    GREMLIN_USE_SSL: z.string().default(String(DEFAULTS.USE_SSL)).transform(parseBooleanValue),
-    GREMLIN_USERNAME: z.string().optional(),
-    GREMLIN_PASSWORD: z.string().optional(),
-    LOG_LEVEL: z.enum(['error', 'warn', 'info', 'debug']).default(DEFAULTS.LOG_LEVEL),
-    GREMLIN_IDLE_TIMEOUT: z
-      .string()
-      .default('300')
-      .transform(val => parseInt(val, 10)),
-    GREMLIN_ENUM_DISCOVERY_ENABLED: z.string().default('true').transform(parseBooleanValue),
-    GREMLIN_ENUM_CARDINALITY_THRESHOLD: z
-      .string()
-      .default('10')
-      .transform(val => parseInt(val, 10)),
-    GREMLIN_ENUM_PROPERTY_BLACKLIST: z
-      .string()
-      .default(
-        'id,pk,name,description,startDate,endDate,arrival,departure,timestamp,createdAt,updatedAt'
-      )
-      .transform(val => val.split(',').map(s => s.trim())),
-    GREMLIN_SCHEMA_INCLUDE_SAMPLE_VALUES: z.string().default('false').transform(parseBooleanValue),
-    GREMLIN_SCHEMA_MAX_ENUM_VALUES: z
-      .string()
-      .default('10')
-      .transform(val => parseInt(val, 10)),
-    GREMLIN_SCHEMA_INCLUDE_COUNTS: z.string().default('true').transform(parseBooleanValue),
-  })
-  .transform(env => {
-    const { host, port, traversalSource } = parseEndpoint(env.GREMLIN_ENDPOINT);
-
-    return {
-      // Gremlin connection config
-      gremlinHost: host,
-      gremlinPort: port,
-      gremlinTraversalSource: traversalSource,
-      gremlinUseSSL: env.GREMLIN_USE_SSL,
-      gremlinUsername: env.GREMLIN_USERNAME,
-      gremlinPassword: env.GREMLIN_PASSWORD,
-      gremlinIdleTimeout: env.GREMLIN_IDLE_TIMEOUT,
-      gremlinEnumDiscoveryEnabled: env.GREMLIN_ENUM_DISCOVERY_ENABLED,
-      gremlinEnumCardinalityThreshold: env.GREMLIN_ENUM_CARDINALITY_THRESHOLD,
-      gremlinEnumPropertyBlacklist: env.GREMLIN_ENUM_PROPERTY_BLACKLIST,
-      gremlinSchemaIncludeSampleValues: env.GREMLIN_SCHEMA_INCLUDE_SAMPLE_VALUES,
-      gremlinSchemaMaxEnumValues: env.GREMLIN_SCHEMA_MAX_ENUM_VALUES,
-      gremlinSchemaIncludeCounts: env.GREMLIN_SCHEMA_INCLUDE_COUNTS,
-
-      // Server config
-      serverName: DEFAULTS.SERVER_NAME,
-      serverVersion: DEFAULTS.SERVER_VERSION,
-
-      // Logging config
-      logLevel: env.LOG_LEVEL,
-    };
-  });
-
 export type AppConfigType = Effect.Effect.Success<typeof AppConfig>;
-
-/**
- * Backward compatibility config export
- */
-export type Config = z.infer<typeof configSchema>;
-
-/**
- * Validated and transformed configuration object (backward compatibility).
- * Parsed once during module initialization for efficiency.
- */
-export const config = configSchema.parse(process.env);
-
-/**
- * Effect for getting the configuration
- */
-export const getConfig = Effect.succeed(config);

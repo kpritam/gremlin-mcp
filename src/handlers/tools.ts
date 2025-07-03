@@ -3,122 +3,42 @@
  * Uses proper dependency injection instead of global runtime container.
  */
 
-import { Effect, pipe } from 'effect';
+import { Effect } from 'effect';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { TOOL_NAMES } from '../constants.js';
 import { GremlinService } from '../gremlin/service.js';
-import { type ImportDataInput, type ExportSubgraphInput } from '../gremlin/models.js';
 import { type EffectMcpBridge } from './effect-runtime-bridge.js';
-import { createContextualError, OPERATION_CONTEXTS } from '../errors.js';
 import { importGraphData, exportSubgraph } from '../utils/data-operations.js';
+import {
+  createSimpleToolHandler,
+  createSchemaToolHandler,
+  createQueryResultHandler,
+  createDataOperationHandler,
+} from './tool-patterns.js';
 
 /**
- * Validate import tool input
+ * Input validation schemas
  */
-const validateImportInput = (args: unknown): ImportDataInput => {
-  const inputSchema = z.object({
-    format: z.enum(['graphson', 'csv']),
-    data: z.string(),
-    options: z
-      .object({
-        batch_size: z.number().optional(),
-        clear_graph: z.boolean().optional(),
-        validate_schema: z.boolean().optional(),
-      })
-      .optional(),
-  });
-  return inputSchema.parse(args) as ImportDataInput;
-};
+const importInputSchema = z.object({
+  format: z.enum(['graphson', 'csv']),
+  data: z.string(),
+  options: z
+    .object({
+      batch_size: z.number().optional(),
+      clear_graph: z.boolean().optional(),
+      validate_schema: z.boolean().optional(),
+    })
+    .optional(),
+});
 
-/**
- * Validate export tool input
- */
-const validateExportInput = (args: unknown): ExportSubgraphInput => {
-  const inputSchema = z.object({
-    traversal_query: z.string(),
-    format: z.enum(['graphson', 'json', 'csv']),
-    max_depth: z.number().optional(),
-    include_properties: z.array(z.string()).optional(),
-    exclude_properties: z.array(z.string()).optional(),
-  });
-  return inputSchema.parse(args) as ExportSubgraphInput;
-};
-
-/**
- * Execute import operation and format response
- */
-const executeImportOperation = async (
-  bridge: EffectMcpBridge<GremlinService>,
-  validatedInput: ImportDataInput
-) => {
-  const result = await bridge.runEffect(
-    pipe(
-      GremlinService,
-      Effect.flatMap(service => importGraphData(service, validatedInput)),
-      Effect.either
-    )
-  );
-
-  if (result._tag === 'Left') {
-    return {
-      content: [{ type: 'text' as const, text: `Import failed: ${result.left.message}` }],
-      isError: true,
-    };
-  }
-
-  return {
-    content: [{ type: 'text' as const, text: JSON.stringify(result.right, null, 2) }],
-  };
-};
-
-/**
- * Execute export operation and format response
- */
-const executeExportOperation = async (
-  bridge: EffectMcpBridge<GremlinService>,
-  validatedInput: ExportSubgraphInput
-) => {
-  const result = await bridge.runEffect(
-    pipe(
-      GremlinService,
-      Effect.flatMap(service => exportSubgraph(service, validatedInput)),
-      Effect.either
-    )
-  );
-
-  if (result._tag === 'Left') {
-    return {
-      content: [{ type: 'text' as const, text: `Export failed: ${result.left.message}` }],
-      isError: true,
-    };
-  }
-
-  return {
-    content: [{ type: 'text' as const, text: JSON.stringify(result.right, null, 2) }],
-  };
-};
-
-/**
- * Format error response with standardized messaging
- */
-const formatErrorResponse = (error: unknown, operation: string) => {
-  const mcpError = createContextualError('RESOURCE', operation, error);
-  return {
-    content: [{ type: 'text' as const, text: mcpError.message }],
-    isError: true,
-  };
-};
-
-/**
- * Format operation result error with consistent messaging
- */
-const formatOperationError = (result: { left: { message: string } }, operation: string) => {
-  return {
-    content: [{ type: 'text' as const, text: `${operation}: ${result.left.message}` }],
-    isError: true,
-  };
-};
+const exportInputSchema = z.object({
+  traversal_query: z.string(),
+  format: z.enum(['graphson', 'json', 'csv']),
+  max_depth: z.number().optional(),
+  include_properties: z.array(z.string()).optional(),
+  exclude_properties: z.array(z.string()).optional(),
+});
 
 /**
  * Register Effect-based tool handlers with the MCP server.
@@ -136,27 +56,10 @@ export function registerEffectToolHandlers(
       description: 'Get the connection status of the Gremlin graph database',
       inputSchema: {},
     },
-    async () => {
-      try {
-        const result = await bridge.runEffect(
-          pipe(
-            GremlinService,
-            Effect.flatMap(service => service.getStatus),
-            Effect.either
-          )
-        );
-
-        if (result._tag === 'Left') {
-          return formatOperationError(result, 'Connection status check failed');
-        }
-
-        return {
-          content: [{ type: 'text' as const, text: result.right }],
-        };
-      } catch (error) {
-        return formatErrorResponse(error, OPERATION_CONTEXTS.TOOL_EXECUTION);
-      }
-    }
+    createSimpleToolHandler(service => service.getStatus, 'Connection status check failed').bind(
+      null,
+      bridge
+    )
   );
 
   // Get Graph Schema
@@ -168,39 +71,10 @@ export function registerEffectToolHandlers(
         'Get the complete schema of the graph including vertex labels, edge labels, and relationship patterns',
       inputSchema: {},
     },
-    async () => {
-      try {
-        const result = await bridge.runEffect(
-          pipe(
-            GremlinService,
-            Effect.flatMap(service => service.getSchema),
-            Effect.either
-          )
-        );
-
-        if (result._tag === 'Left') {
-          return {
-            content: [
-              {
-                type: 'text' as const,
-                text: JSON.stringify(
-                  { error: `Schema retrieval failed: ${result.left.message}` },
-                  null,
-                  2
-                ),
-              },
-            ],
-            isError: true,
-          };
-        }
-
-        return {
-          content: [{ type: 'text' as const, text: JSON.stringify(result.right, null, 2) }],
-        };
-      } catch (error) {
-        return formatErrorResponse(error, OPERATION_CONTEXTS.TOOL_EXECUTION);
-      }
-    }
+    createSchemaToolHandler(service => service.getSchema, 'Schema retrieval failed').bind(
+      null,
+      bridge
+    )
   );
 
   // Refresh Schema Cache
@@ -211,33 +85,11 @@ export function registerEffectToolHandlers(
       description: 'Force an immediate refresh of the graph schema cache',
       inputSchema: {},
     },
-    async () => {
-      try {
-        const result = await bridge.runEffect(
-          pipe(
-            GremlinService,
-            Effect.flatMap(service => service.refreshSchemaCache),
-            Effect.map(() => 'Schema cache refreshed successfully.'),
-            Effect.either
-          )
-        );
-
-        if (result._tag === 'Left') {
-          return {
-            content: [
-              { type: 'text' as const, text: `Failed to refresh schema: ${result.left.message}` },
-            ],
-            isError: true,
-          };
-        }
-
-        return {
-          content: [{ type: 'text' as const, text: result.right }],
-        };
-      } catch (error) {
-        return formatErrorResponse(error, OPERATION_CONTEXTS.TOOL_EXECUTION);
-      }
-    }
+    createSimpleToolHandler(
+      service =>
+        Effect.map(service.refreshSchemaCache, () => 'Schema cache refreshed successfully.'),
+      'Failed to refresh schema'
+    ).bind(null, bridge)
   );
 
   // Run Gremlin Query
@@ -250,46 +102,7 @@ export function registerEffectToolHandlers(
         query: z.string().describe('The Gremlin query to execute'),
       },
     },
-    async (args: unknown) => {
-      try {
-        const validatedInput = z.object({ query: z.string() }).parse(args);
-        const { query } = validatedInput;
-
-        const result = await bridge.runEffect(
-          pipe(
-            GremlinService,
-            Effect.flatMap(service => service.executeQuery(query)),
-            Effect.either
-          )
-        );
-
-        if (result._tag === 'Left') {
-          return {
-            content: [
-              {
-                type: 'text' as const,
-                text: JSON.stringify(
-                  {
-                    message: `Query failed: ${result.left.message}`,
-                    results: [],
-                    metadata: { error: true, query },
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-            isError: true,
-          };
-        }
-
-        return {
-          content: [{ type: 'text' as const, text: JSON.stringify(result.right, null, 2) }],
-        };
-      } catch (error) {
-        return formatErrorResponse(error, OPERATION_CONTEXTS.QUERY_EXECUTION);
-      }
-    }
+    createQueryResultHandler((service, query) => service.executeQuery(query)).bind(null, bridge)
   );
 
   // Import Graph Data
@@ -317,14 +130,11 @@ export function registerEffectToolHandlers(
           .describe('Import options'),
       },
     },
-    async (args: unknown) => {
-      try {
-        const validatedInput = validateImportInput(args);
-        return await executeImportOperation(bridge, validatedInput);
-      } catch (error) {
-        return formatErrorResponse(error, 'Import Graph Data');
-      }
-    }
+    createDataOperationHandler(
+      importInputSchema,
+      (service, input) => importGraphData(service, input),
+      'Import Graph Data'
+    ).bind(null, bridge)
   );
 
   // Export Subgraph
@@ -349,13 +159,10 @@ export function registerEffectToolHandlers(
           .describe('Properties to exclude from the export'),
       },
     },
-    async (args: unknown) => {
-      try {
-        const validatedInput = validateExportInput(args);
-        return await executeExportOperation(bridge, validatedInput);
-      } catch (error) {
-        return formatErrorResponse(error, 'Export Subgraph');
-      }
-    }
+    createDataOperationHandler(
+      exportInputSchema,
+      (service, input) => exportSubgraph(service, input),
+      'Export Subgraph'
+    ).bind(null, bridge)
   );
 }

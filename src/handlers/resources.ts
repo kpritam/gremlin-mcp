@@ -7,7 +7,7 @@ import { Effect, pipe } from 'effect';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { RESOURCE_URIS, MIME_TYPES } from '../constants.js';
 import { GremlinService } from '../gremlin/service.js';
-import { fromError } from '../errors.js';
+import { createContextualError, OPERATION_CONTEXTS, ERROR_PREFIXES } from '../errors.js';
 import { type EffectMcpBridge } from './effect-runtime-bridge.js';
 
 /**
@@ -32,7 +32,9 @@ export function registerEffectResourceHandlers(
           pipe(
             GremlinService,
             Effect.flatMap(service => service.getStatus),
-            Effect.catchAll(error => Effect.succeed(`Connection error: ${error.message}`))
+            Effect.catchAll(error =>
+              Effect.succeed(`${ERROR_PREFIXES.CONNECTION}: ${error.message}`)
+            )
           )
         );
 
@@ -46,13 +48,17 @@ export function registerEffectResourceHandlers(
           ],
         };
       } catch (error) {
-        const mcpError = fromError(error, 'Status resource');
+        const mcpError = createContextualError(
+          'RESOURCE',
+          OPERATION_CONTEXTS.RESOURCE_ACCESS,
+          error
+        );
         return {
           contents: [
             {
               uri: RESOURCE_URIS.STATUS,
               mimeType: MIME_TYPES.TEXT_PLAIN,
-              text: `Error: ${mcpError.message}`,
+              text: mcpError.message,
             },
           ],
         };
@@ -89,7 +95,7 @@ export function registerEffectResourceHandlers(
           ],
         };
       } catch (error) {
-        const mcpError = fromError(error, 'Schema resource');
+        const mcpError = createContextualError('SCHEMA', OPERATION_CONTEXTS.RESOURCE_ACCESS, error);
         return {
           contents: [
             {

@@ -10,7 +10,7 @@ import { TOOL_NAMES } from '../constants.js';
 import { GremlinService } from '../gremlin/service.js';
 import { type ImportDataInput, type ExportSubgraphInput } from '../gremlin/models.js';
 import { type EffectMcpBridge } from './effect-runtime-bridge.js';
-import { fromError } from '../errors.js';
+import { createContextualError, OPERATION_CONTEXTS } from '../errors.js';
 import { importGraphData, exportSubgraph } from '../utils/data-operations.js';
 
 /**
@@ -100,12 +100,22 @@ const executeExportOperation = async (
 };
 
 /**
- * Format error response
+ * Format error response with standardized messaging
  */
 const formatErrorResponse = (error: unknown, operation: string) => {
-  const mcpError = fromError(error, operation);
+  const mcpError = createContextualError('RESOURCE', operation, error);
   return {
-    content: [{ type: 'text' as const, text: `Unexpected error: ${mcpError.message}` }],
+    content: [{ type: 'text' as const, text: mcpError.message }],
+    isError: true,
+  };
+};
+
+/**
+ * Format operation result error with consistent messaging
+ */
+const formatOperationError = (result: { left: { message: string } }, operation: string) => {
+  return {
+    content: [{ type: 'text' as const, text: `${operation}: ${result.left.message}` }],
     isError: true,
   };
 };
@@ -137,21 +147,14 @@ export function registerEffectToolHandlers(
         );
 
         if (result._tag === 'Left') {
-          return {
-            content: [{ type: 'text' as const, text: `Connection error: ${result.left.message}` }],
-            isError: true,
-          };
+          return formatOperationError(result, 'Connection status check failed');
         }
 
         return {
           content: [{ type: 'text' as const, text: result.right }],
         };
       } catch (error) {
-        const mcpError = fromError(error, 'Get Graph Status');
-        return {
-          content: [{ type: 'text' as const, text: `Unexpected error: ${mcpError.message}` }],
-          isError: true,
-        };
+        return formatErrorResponse(error, OPERATION_CONTEXTS.TOOL_EXECUTION);
       }
     }
   );
@@ -181,7 +184,7 @@ export function registerEffectToolHandlers(
               {
                 type: 'text' as const,
                 text: JSON.stringify(
-                  { error: `Failed to get schema: ${result.left.message}` },
+                  { error: `Schema retrieval failed: ${result.left.message}` },
                   null,
                   2
                 ),
@@ -195,11 +198,7 @@ export function registerEffectToolHandlers(
           content: [{ type: 'text' as const, text: JSON.stringify(result.right, null, 2) }],
         };
       } catch (error) {
-        const mcpError = fromError(error, 'Get Graph Schema');
-        return {
-          content: [{ type: 'text' as const, text: `Unexpected error: ${mcpError.message}` }],
-          isError: true,
-        };
+        return formatErrorResponse(error, OPERATION_CONTEXTS.TOOL_EXECUTION);
       }
     }
   );
@@ -236,11 +235,7 @@ export function registerEffectToolHandlers(
           content: [{ type: 'text' as const, text: result.right }],
         };
       } catch (error) {
-        const mcpError = fromError(error, 'Refresh Schema Cache');
-        return {
-          content: [{ type: 'text' as const, text: `Unexpected error: ${mcpError.message}` }],
-          isError: true,
-        };
+        return formatErrorResponse(error, OPERATION_CONTEXTS.TOOL_EXECUTION);
       }
     }
   );
@@ -292,11 +287,7 @@ export function registerEffectToolHandlers(
           content: [{ type: 'text' as const, text: JSON.stringify(result.right, null, 2) }],
         };
       } catch (error) {
-        const mcpError = fromError(error, 'Run Gremlin Query');
-        return {
-          content: [{ type: 'text' as const, text: `Unexpected error: ${mcpError.message}` }],
-          isError: true,
-        };
+        return formatErrorResponse(error, OPERATION_CONTEXTS.QUERY_EXECUTION);
       }
     }
   );

@@ -27,23 +27,17 @@ export const importGraphData = (
       `Starting import operation: format=${input.format}, size=${input.data.length} chars`
     );
 
-    try {
-      switch (input.format) {
-        case 'graphson':
-          return yield* importGraphSON(service, input);
+    switch (input.format) {
+      case 'graphson':
+        return yield* importGraphSON(service, input);
 
-        case 'csv':
-          return yield* importCSV(service, input);
+      case 'csv':
+        return yield* importCSV(service, input);
 
-        default:
-          return yield* Effect.fail(
-            Errors.resource(`Unsupported import format: ${input.format}`, 'import_operation')
-          );
-      }
-    } catch (error) {
-      return yield* Effect.fail(
-        Errors.resource('Import operation failed', 'import_operation', error)
-      );
+      default:
+        return yield* Effect.fail(
+          Errors.resource(`Unsupported import format: ${input.format}`, 'import_operation')
+        );
     }
   });
 
@@ -59,29 +53,23 @@ export const exportSubgraph = (
       `Starting export operation: format=${input.format}, query=${input.traversal_query}`
     );
 
-    try {
-      // Execute the traversal query to get the subgraph data
-      const queryResult = yield* service.executeQuery(input.traversal_query);
+    // Execute the traversal query to get the subgraph data
+    const queryResult = yield* service.executeQuery(input.traversal_query);
 
-      switch (input.format) {
-        case 'graphson':
-          return yield* exportToGraphSON(queryResult.results, input);
+    switch (input.format) {
+      case 'graphson':
+        return yield* exportToGraphSON(queryResult.results, input);
 
-        case 'json':
-          return yield* exportToJSON(queryResult.results, input);
+      case 'json':
+        return yield* exportToJSON(queryResult.results, input);
 
-        case 'csv':
-          return yield* exportToCSV(queryResult.results, input);
+      case 'csv':
+        return yield* exportToCSV(queryResult.results, input);
 
-        default:
-          return yield* Effect.fail(
-            Errors.resource(`Unsupported export format: ${input.format}`, 'export_operation')
-          );
-      }
-    } catch (error) {
-      return yield* Effect.fail(
-        Errors.resource('Export operation failed', 'export_operation', error)
-      );
+      default:
+        return yield* Effect.fail(
+          Errors.resource(`Unsupported export format: ${input.format}`, 'export_operation')
+        );
     }
   });
 
@@ -144,25 +132,22 @@ const importGraphSON = (
   input: ImportDataInput
 ): Effect.Effect<string, ResourceError | GremlinConnectionError | GremlinQueryError> =>
   Effect.gen(function* () {
-    try {
-      const data = JSON.parse(input.data);
+    const data = yield* Effect.tryPromise({
+      try: () => Promise.resolve(JSON.parse(input.data)),
+      catch: error => Errors.resource('Failed to parse GraphSON data', 'graphson_import', error),
+    });
 
-      yield* clearGraphIfRequested(service, input.options?.clear_graph);
+    yield* clearGraphIfRequested(service, input.options?.clear_graph);
 
-      if (data.vertices) {
-        yield* importVertices(service, data.vertices);
-      }
-
-      if (data.edges) {
-        yield* importEdges(service, data.edges);
-      }
-
-      return buildImportSummary(data.vertices?.length || 0, data.edges?.length || 0);
-    } catch (error) {
-      return yield* Effect.fail(
-        Errors.resource('Failed to parse or import GraphSON data', 'graphson_import', error)
-      );
+    if (data.vertices) {
+      yield* importVertices(service, data.vertices);
     }
+
+    if (data.edges) {
+      yield* importEdges(service, data.edges);
+    }
+
+    return buildImportSummary(data.vertices?.length || 0, data.edges?.length || 0);
   });
 
 /**
@@ -213,18 +198,15 @@ const importCSV = (
   input: ImportDataInput
 ): Effect.Effect<string, ResourceError | GremlinConnectionError | GremlinQueryError> =>
   Effect.gen(function* () {
-    try {
-      const { headers, dataRows } = parseCSVData(input.data);
+    const { headers, dataRows } = yield* Effect.tryPromise({
+      try: () => Promise.resolve(parseCSVData(input.data)),
+      catch: error => Errors.resource('Failed to parse CSV data', 'csv_import', error),
+    });
 
-      yield* clearGraphIfRequested(service, input.options?.clear_graph);
-      yield* importCSVVertices(service, dataRows, headers);
+    yield* clearGraphIfRequested(service, input.options?.clear_graph);
+    yield* importCSVVertices(service, dataRows, headers);
 
-      return `CSV import completed successfully. Processed ${dataRows.length} rows.`;
-    } catch (error) {
-      return yield* Effect.fail(
-        Errors.resource('Failed to parse or import CSV data', 'csv_import', error)
-      );
-    }
+    return `CSV import completed successfully. Processed ${dataRows.length} rows.`;
   });
 
 /**
@@ -235,22 +217,24 @@ const exportToGraphSON = (
   _input: ExportSubgraphInput
 ): Effect.Effect<string, ResourceError | GremlinConnectionError | GremlinQueryError> =>
   Effect.gen(function* () {
-    try {
-      const graphsonData = {
-        vertices: results.filter(
-          r => typeof r === 'object' && r !== null && 'type' in r && r.type === 'vertex'
-        ),
-        edges: results.filter(
-          r => typeof r === 'object' && r !== null && 'type' in r && r.type === 'edge'
-        ),
-      };
+    const graphsonData = yield* Effect.tryPromise({
+      try: () =>
+        Promise.resolve({
+          vertices: results.filter(
+            r => typeof r === 'object' && r !== null && 'type' in r && r.type === 'vertex'
+          ),
+          edges: results.filter(
+            r => typeof r === 'object' && r !== null && 'type' in r && r.type === 'edge'
+          ),
+        }),
+      catch: error => Errors.resource('Failed to process GraphSON data', 'graphson_export', error),
+    });
 
-      return JSON.stringify(graphsonData, null, 2);
-    } catch (error) {
-      return yield* Effect.fail(
-        Errors.resource('Failed to export to GraphSON format', 'graphson_export', error)
-      );
-    }
+    return yield* Effect.tryPromise({
+      try: () => Promise.resolve(JSON.stringify(graphsonData, null, 2)),
+      catch: error =>
+        Errors.resource('Failed to serialize GraphSON data', 'graphson_export', error),
+    });
   });
 
 /**
@@ -261,18 +245,20 @@ const exportToJSON = (
   input: ExportSubgraphInput
 ): Effect.Effect<string, ResourceError | GremlinConnectionError | GremlinQueryError> =>
   Effect.gen(function* () {
-    try {
-      const filteredResults =
-        input.include_properties || input.exclude_properties
-          ? results.map(result => filterProperties(result, input))
-          : results;
+    const filteredResults = yield* Effect.tryPromise({
+      try: () =>
+        Promise.resolve(
+          input.include_properties || input.exclude_properties
+            ? results.map(result => filterProperties(result, input))
+            : results
+        ),
+      catch: error => Errors.resource('Failed to filter JSON data', 'json_export', error),
+    });
 
-      return JSON.stringify(filteredResults, null, 2);
-    } catch (error) {
-      return yield* Effect.fail(
-        Errors.resource('Failed to export to JSON format', 'json_export', error)
-      );
-    }
+    return yield* Effect.tryPromise({
+      try: () => Promise.resolve(JSON.stringify(filteredResults, null, 2)),
+      catch: error => Errors.resource('Failed to serialize JSON data', 'json_export', error),
+    });
   });
 
 /**
@@ -283,38 +269,42 @@ const exportToCSV = (
   _input: ExportSubgraphInput
 ): Effect.Effect<string, ResourceError | GremlinConnectionError | GremlinQueryError> =>
   Effect.gen(function* () {
-    try {
-      if (results.length === 0) {
-        return '';
-      }
-
-      // Extract all unique property keys
-      const allKeys = new Set<string>();
-      results.forEach(result => {
-        if (typeof result === 'object' && result !== null) {
-          Object.keys(result).forEach(key => allKeys.add(key));
-        }
-      });
-
-      const headers = Array.from(allKeys);
-      const csvLines = [headers.join(',')];
-
-      results.forEach(result => {
-        if (isRecord(result)) {
-          const row = headers.map(header => {
-            const value = result[header];
-            return value !== undefined ? String(value) : '';
-          });
-          csvLines.push(row.join(','));
-        }
-      });
-
-      return csvLines.join('\n');
-    } catch (error) {
-      return yield* Effect.fail(
-        Errors.resource('Failed to export to CSV format', 'csv_export', error)
-      );
+    if (results.length === 0) {
+      return '';
     }
+
+    const csvData = yield* Effect.tryPromise({
+      try: () =>
+        Promise.resolve(
+          (() => {
+            // Extract all unique property keys
+            const allKeys = new Set<string>();
+            results.forEach(result => {
+              if (typeof result === 'object' && result !== null) {
+                Object.keys(result).forEach(key => allKeys.add(key));
+              }
+            });
+
+            const headers = Array.from(allKeys);
+            const csvLines = [headers.join(',')];
+
+            results.forEach(result => {
+              if (isRecord(result)) {
+                const row = headers.map(header => {
+                  const value = result[header];
+                  return value !== undefined ? String(value) : '';
+                });
+                csvLines.push(row.join(','));
+              }
+            });
+
+            return csvLines.join('\n');
+          })()
+        ),
+      catch: error => Errors.resource('Failed to process CSV data', 'csv_export', error),
+    });
+
+    return csvData;
   });
 
 /**

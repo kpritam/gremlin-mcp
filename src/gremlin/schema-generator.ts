@@ -4,9 +4,30 @@
 
 import { Effect, Duration, Stream, Chunk } from 'effect';
 import gremlin from 'gremlin';
-import { GraphSchemaSchema, type GraphSchema } from './models.js';
+import {
+  GraphSchemaSchema,
+  type GraphSchema,
+  type Node,
+  type Relationship,
+  type RelationshipPattern,
+  type Property,
+} from './models.js';
 import { Errors, type GremlinConnectionError } from '../errors.js';
 import type { ConnectionState, SchemaConfig } from './types.js';
+
+// Import proper types from gremlin package
+import type { process } from 'gremlin';
+type GraphTraversalSource = process.GraphTraversalSource;
+
+/**
+ * Schema generation count data structure
+ */
+interface SchemaCountData {
+  /** Mapping of labels to their counts */
+  value?: Record<string, number>;
+  /** Total count */
+  total?: number;
+}
 
 const { inV, outV, label } = gremlin.process.statics;
 
@@ -16,8 +37,8 @@ const { inV, outV, label } = gremlin.process.statics;
 const createBatchedStream = <T, R>(
   items: T[],
   batchSize: number,
-  processor: (item: T) => Effect.Effect<R, any>
-): Stream.Stream<R, any> =>
+  processor: (item: T) => Effect.Effect<R, unknown>
+): Stream.Stream<R, unknown> =>
   Stream.fromIterable(items).pipe(
     Stream.grouped(batchSize),
     Stream.mapEffect(chunk =>
@@ -72,7 +93,7 @@ export const DEFAULT_SCHEMA_CONFIG: SchemaConfig = {
  * Execute the core schema generation logic
  */
 const executeSchemaGeneration = (
-  g: any,
+  g: GraphTraversalSource,
   config: SchemaConfig,
   startTime: number
 ): Effect.Effect<GraphSchema, GremlinConnectionError> =>
@@ -136,7 +157,7 @@ export const generateGraphSchema = (
 /**
  * Get graph labels (vertices and edges)
  */
-const getGraphLabels = (g: any) =>
+const getGraphLabels = (g: GraphTraversalSource) =>
   Effect.gen(function* () {
     const [vertexLabels, edgeLabels] = yield* Effect.all([
       Effect.tryPromise({
@@ -163,7 +184,7 @@ const getGraphLabels = (g: any) =>
  * Get counts for vertices and edges if requested
  */
 const getCounts = (
-  g: any,
+  g: GraphTraversalSource,
   _labels: { vertexLabels: string[]; edgeLabels: string[] },
   config: SchemaConfig
 ) =>
@@ -190,9 +211,9 @@ const getCounts = (
  * Build final schema data structure
  */
 const buildSchemaData = (
-  nodes: any[],
-  relationships: any[],
-  patterns: any[],
+  nodes: Node[],
+  relationships: Relationship[],
+  patterns: RelationshipPattern[],
   config: SchemaConfig,
   startTime: number
 ) => {
@@ -231,11 +252,11 @@ const buildSchemaData = (
  * Analyze all vertex properties using resourceful streams
  */
 const analyzeAllVertexProperties = (
-  g: any,
+  g: GraphTraversalSource,
   vertexLabels: string[],
   config: SchemaConfig,
-  vertexCounts: any
-): Effect.Effect<any[], any> =>
+  vertexCounts: SchemaCountData | null
+): Effect.Effect<Node[], GremlinConnectionError> =>
   Effect.gen(function* () {
     const batchSize = config.batchSize || DEFAULT_BATCH_SIZE;
 
@@ -247,7 +268,12 @@ const analyzeAllVertexProperties = (
       analyzeVertexPropertiesBatched(g, vertexLabel, config, vertexCounts)
     ).pipe(
       Stream.runCollect,
-      Effect.map(chunk => [...Chunk.toReadonlyArray(chunk)]) // Convert to mutable array
+      Effect.map(chunk => [...Chunk.toReadonlyArray(chunk)]), // Convert to mutable array
+      Effect.mapError((error: unknown) =>
+        error instanceof Error
+          ? Errors.connection('Failed to analyze vertex properties', error)
+          : Errors.connection('Failed to analyze vertex properties', error)
+      )
     );
   });
 
@@ -255,15 +281,15 @@ const analyzeAllVertexProperties = (
  * Analyze vertex properties for a given label using batched queries
  */
 const analyzeVertexPropertiesBatched = (
-  g: any,
+  g: GraphTraversalSource,
   vertexLabel: string,
   config: SchemaConfig,
-  vertexCounts: any
-) =>
+  vertexCounts: SchemaCountData | null
+): Effect.Effect<Node, GremlinConnectionError> =>
   Effect.gen(function* () {
     const propertyAnalysis = yield* batchAnalyzeVertexProperties(g, vertexLabel, config);
     const count = config.includeCounts
-      ? (vertexCounts as any)?.value?.[vertexLabel] || 0
+      ? (vertexCounts as SchemaCountData)?.value?.[vertexLabel] || 0
       : undefined;
 
     return {
@@ -277,11 +303,11 @@ const analyzeVertexPropertiesBatched = (
  * Analyze all edge properties using resourceful streams
  */
 const analyzeAllEdgeProperties = (
-  g: any,
+  g: GraphTraversalSource,
   edgeLabels: string[],
   config: SchemaConfig,
-  edgeCounts: any
-): Effect.Effect<any[], any> =>
+  edgeCounts: SchemaCountData | null
+): Effect.Effect<Relationship[], GremlinConnectionError> =>
   Effect.gen(function* () {
     const batchSize = config.batchSize || DEFAULT_BATCH_SIZE;
 
@@ -293,7 +319,12 @@ const analyzeAllEdgeProperties = (
       analyzeEdgePropertiesBatched(g, edgeLabel, config, edgeCounts)
     ).pipe(
       Stream.runCollect,
-      Effect.map(chunk => [...Chunk.toReadonlyArray(chunk)]) // Convert to mutable array
+      Effect.map(chunk => [...Chunk.toReadonlyArray(chunk)]), // Convert to mutable array
+      Effect.mapError((error: unknown) =>
+        error instanceof Error
+          ? Errors.connection('Failed to analyze edge properties', error)
+          : Errors.connection('Failed to analyze edge properties', error)
+      )
     );
   });
 
@@ -301,14 +332,16 @@ const analyzeAllEdgeProperties = (
  * Analyze edge properties for a given label using batched queries
  */
 const analyzeEdgePropertiesBatched = (
-  g: any,
+  g: GraphTraversalSource,
   edgeLabel: string,
   config: SchemaConfig,
-  edgeCounts: any
-) =>
+  edgeCounts: SchemaCountData | null
+): Effect.Effect<Relationship, GremlinConnectionError> =>
   Effect.gen(function* () {
     const propertyAnalysis = yield* batchAnalyzeEdgeProperties(g, edgeLabel, config);
-    const count = config.includeCounts ? (edgeCounts as any)?.value?.[edgeLabel] || 0 : undefined;
+    const count = config.includeCounts
+      ? (edgeCounts as SchemaCountData)?.value?.[edgeLabel] || 0
+      : undefined;
 
     return {
       type: edgeLabel,
@@ -320,7 +353,11 @@ const analyzeEdgePropertiesBatched = (
 /**
  * Batch analyze vertex properties using streams for property processing
  */
-const batchAnalyzeVertexProperties = (g: any, vertexLabel: string, config: SchemaConfig) =>
+const batchAnalyzeVertexProperties = (
+  g: GraphTraversalSource,
+  vertexLabel: string,
+  config: SchemaConfig
+): Effect.Effect<Property[], GremlinConnectionError> =>
   Effect.gen(function* () {
     // Get all property keys first
     const propertyKeys = yield* Effect.tryPromise({
@@ -335,14 +372,18 @@ const batchAnalyzeVertexProperties = (g: any, vertexLabel: string, config: Schem
     return yield* Stream.fromIterable(keyList).pipe(
       Stream.mapEffect(key => batchAnalyzeSingleProperty(g, vertexLabel, key, config, true)),
       Stream.runCollect,
-      Effect.map(Chunk.toReadonlyArray)
+      Effect.map(chunk => [...Chunk.toReadonlyArray(chunk)]) // Convert to mutable array
     );
   });
 
 /**
  * Batch analyze edge properties using streams for property processing
  */
-const batchAnalyzeEdgeProperties = (g: any, edgeLabel: string, config: SchemaConfig) =>
+const batchAnalyzeEdgeProperties = (
+  g: GraphTraversalSource,
+  edgeLabel: string,
+  config: SchemaConfig
+): Effect.Effect<Property[], GremlinConnectionError> =>
   Effect.gen(function* () {
     // Get all property keys first
     const propertyKeys = yield* Effect.tryPromise({
@@ -357,7 +398,7 @@ const batchAnalyzeEdgeProperties = (g: any, edgeLabel: string, config: SchemaCon
     return yield* Stream.fromIterable(keyList).pipe(
       Stream.mapEffect(key => batchAnalyzeSingleProperty(g, edgeLabel, key, config, false)),
       Stream.runCollect,
-      Effect.map(Chunk.toReadonlyArray)
+      Effect.map(chunk => [...Chunk.toReadonlyArray(chunk)]) // Convert to mutable array
     );
   });
 
@@ -365,12 +406,12 @@ const batchAnalyzeEdgeProperties = (g: any, edgeLabel: string, config: SchemaCon
  * Batch analyze a single property with optimized queries
  */
 const batchAnalyzeSingleProperty = (
-  g: any,
+  g: GraphTraversalSource,
   elementLabel: string,
   propertyKey: string,
   config: SchemaConfig,
   isVertex: boolean
-) =>
+): Effect.Effect<Property, GremlinConnectionError> =>
   Effect.gen(function* () {
     // Skip blacklisted properties
     if (config.enumPropertyBlacklist.includes(propertyKey)) {
@@ -391,17 +432,22 @@ const batchAnalyzeSingleProperty = (
           .dedup()
           .limit(config.maxEnumValues + 1)
           .toList(),
-      catch: () => [],
+      catch: (error: unknown) =>
+        Errors.connection(`Failed to get values for property ${propertyKey}`, error),
     });
 
-    const valueList = sampleValues as any[];
+    const valueList = sampleValues as unknown[];
     return analyzePropertyFromValues(propertyKey, valueList, config);
   });
 
 /**
  * Analyze property from collected values
  */
-const analyzePropertyFromValues = (propertyKey: string, values: any[], config: SchemaConfig) => {
+const analyzePropertyFromValues = (
+  propertyKey: string,
+  values: unknown[],
+  config: SchemaConfig
+) => {
   // Skip blacklisted properties
   if (config.enumPropertyBlacklist.includes(propertyKey)) {
     return {
@@ -414,9 +460,9 @@ const analyzePropertyFromValues = (propertyKey: string, values: any[], config: S
   const uniqueValues = Array.from(new Set(values)).slice(0, config.maxEnumValues + 1);
 
   // Determine types from sample values
-  const types = Array.from(new Set(uniqueValues.map((val: any) => typeof val).filter(Boolean)));
+  const types = Array.from(new Set(uniqueValues.map((val: unknown) => typeof val).filter(Boolean)));
 
-  const property: any = {
+  const property: Property = {
     name: propertyKey,
     type: types.length > 0 ? types : ['unknown'],
   };
@@ -438,7 +484,7 @@ const analyzePropertyFromValues = (propertyKey: string, values: any[], config: S
 /**
  * Generate relationship patterns with batched approach
  */
-const generateRelationshipPatterns = (g: any, edgeLabels: string[]) =>
+const generateRelationshipPatterns = (g: GraphTraversalSource, edgeLabels: string[]) =>
   Effect.gen(function* () {
     if (edgeLabels.length === 0) {
       return [];
@@ -459,12 +505,12 @@ const generateRelationshipPatterns = (g: any, edgeLabels: string[]) =>
       catch: (error: unknown) => Errors.connection('Failed to get relationship patterns', error),
     });
 
-    const resultList = allPatterns as any[];
+    const resultList = allPatterns as { from: string; to: string; edge: string }[];
     return resultList
-      .map((result: any) => ({
+      .map((result: { from: string; to: string; edge: string }) => ({
         left_node: result.from,
         right_node: result.to,
-        relation: result.label,
+        relation: result.edge,
       }))
       .filter(pattern => pattern.left_node && pattern.right_node && pattern.relation);
   });

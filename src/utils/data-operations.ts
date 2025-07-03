@@ -93,11 +93,11 @@ const clearGraphIfRequested = (
  */
 const importVertices = (
   service: typeof GremlinService.Service,
-  vertices: any[]
+  vertices: unknown[]
 ): Effect.Effect<void, GremlinConnectionError | GremlinQueryError> =>
   Effect.gen(function* () {
     for (const vertex of vertices) {
-      const query = buildVertexInsertQuery(vertex);
+      const query = buildVertexInsertQuery(vertex as Record<string, unknown>);
       yield* service.executeQuery(query);
     }
     yield* Effect.logInfo(`Imported ${vertices.length} vertices`);
@@ -108,11 +108,11 @@ const importVertices = (
  */
 const importEdges = (
   service: typeof GremlinService.Service,
-  edges: any[]
+  edges: unknown[]
 ): Effect.Effect<void, GremlinConnectionError | GremlinQueryError> =>
   Effect.gen(function* () {
     for (const edge of edges) {
-      const query = buildEdgeInsertQuery(edge);
+      const query = buildEdgeInsertQuery(edge as Record<string, unknown>);
       yield* service.executeQuery(query);
     }
     yield* Effect.logInfo(`Imported ${edges.length} edges`);

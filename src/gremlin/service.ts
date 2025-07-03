@@ -10,6 +10,11 @@ import { parseGremlinResultsWithMetadata } from '../utils/result-parser.js';
 import { isGremlinResult } from '../utils/type-guards.js';
 import { GremlinConnectionError, GremlinQueryError, Errors } from '../errors.js';
 import type { AppConfigType } from '../config.js';
+
+// Import proper types from gremlin package
+import type { driver } from 'gremlin';
+type GremlinClient = driver.Client;
+type GremlinResultSet = driver.ResultSet;
 import type { ConnectionState } from './types.js';
 import { ensureConnection, getConnectionStatus } from './connection.js';
 import {
@@ -62,7 +67,7 @@ const makeGremlinService = (config: AppConfigType): Effect.Effect<typeof Gremlin
      */
     const executeRawQuery = (
       query: string,
-      client: any
+      client: GremlinClient
     ): Effect.Effect<unknown, GremlinQueryError> =>
       Effect.tryPromise({
         try: () => client.submit(query),
@@ -75,11 +80,11 @@ const makeGremlinService = (config: AppConfigType): Effect.Effect<typeof Gremlin
     const processResultSet = (resultSet: unknown): unknown[] => {
       // Handle ResultSet objects (with _items property)
       if (resultSet && typeof resultSet === 'object' && '_items' in resultSet) {
-        return (resultSet as any)._items;
+        return (resultSet as unknown as GremlinResultSet).toArray();
       }
       // Handle objects with toArray method
       if (resultSet && typeof resultSet === 'object' && 'toArray' in resultSet) {
-        return (resultSet as any).toArray();
+        return (resultSet as GremlinResultSet).toArray();
       }
       // Handle direct arrays
       if (Array.isArray(resultSet)) {

@@ -5,6 +5,7 @@
 import { Effect, Ref, Option, Duration } from 'effect';
 import type { GraphSchema } from './models.js';
 import type { SchemaCacheEntry } from './types.js';
+import type { GremlinConnectionError } from '../errors.js';
 
 // Constants
 const SCHEMA_CACHE_TTL = Duration.minutes(5);
@@ -28,7 +29,7 @@ export const isCacheValid = (cacheEntry: SchemaCacheEntry): boolean => {
  */
 export const getCachedSchema = (
   cacheRef: Ref.Ref<Option.Option<SchemaCacheEntry>>,
-  generateSchema: Effect.Effect<GraphSchema, any>
+  generateSchema: Effect.Effect<GraphSchema, GremlinConnectionError>
 ) =>
   Effect.gen(function* () {
     const cacheEntry = yield* Ref.get(cacheRef);
@@ -84,7 +85,7 @@ export const invalidateSchemaCache = (cacheRef: Ref.Ref<Option.Option<SchemaCach
  */
 export const refreshSchemaCache = (
   cacheRef: Ref.Ref<Option.Option<SchemaCacheEntry>>,
-  generateSchema: Effect.Effect<GraphSchema, any>
+  generateSchema: Effect.Effect<GraphSchema, GremlinConnectionError>
 ) =>
   Effect.gen(function* () {
     yield* Effect.logInfo('Refreshing schema cache');

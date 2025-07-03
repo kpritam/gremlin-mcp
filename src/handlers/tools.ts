@@ -14,6 +14,103 @@ import { fromError } from '../errors.js';
 import { importGraphData, exportSubgraph } from '../utils/data-operations.js';
 
 /**
+ * Validate import tool input
+ */
+const validateImportInput = (args: unknown): ImportDataInput => {
+  const inputSchema = z.object({
+    format: z.enum(['graphson', 'csv']),
+    data: z.string(),
+    options: z
+      .object({
+        batch_size: z.number().optional(),
+        clear_graph: z.boolean().optional(),
+        validate_schema: z.boolean().optional(),
+      })
+      .optional(),
+  });
+  return inputSchema.parse(args) as ImportDataInput;
+};
+
+/**
+ * Validate export tool input
+ */
+const validateExportInput = (args: unknown): ExportSubgraphInput => {
+  const inputSchema = z.object({
+    traversal_query: z.string(),
+    format: z.enum(['graphson', 'json', 'csv']),
+    max_depth: z.number().optional(),
+    include_properties: z.array(z.string()).optional(),
+    exclude_properties: z.array(z.string()).optional(),
+  });
+  return inputSchema.parse(args) as ExportSubgraphInput;
+};
+
+/**
+ * Execute import operation and format response
+ */
+const executeImportOperation = async (
+  bridge: EffectMcpBridge<GremlinService>,
+  validatedInput: ImportDataInput
+) => {
+  const result = await bridge.runEffect(
+    pipe(
+      GremlinService,
+      Effect.flatMap(service => importGraphData(service, validatedInput)),
+      Effect.either
+    )
+  );
+
+  if (result._tag === 'Left') {
+    return {
+      content: [{ type: 'text' as const, text: `Import failed: ${result.left.message}` }],
+      isError: true,
+    };
+  }
+
+  return {
+    content: [{ type: 'text' as const, text: JSON.stringify(result.right, null, 2) }],
+  };
+};
+
+/**
+ * Execute export operation and format response
+ */
+const executeExportOperation = async (
+  bridge: EffectMcpBridge<GremlinService>,
+  validatedInput: ExportSubgraphInput
+) => {
+  const result = await bridge.runEffect(
+    pipe(
+      GremlinService,
+      Effect.flatMap(service => exportSubgraph(service, validatedInput)),
+      Effect.either
+    )
+  );
+
+  if (result._tag === 'Left') {
+    return {
+      content: [{ type: 'text' as const, text: `Export failed: ${result.left.message}` }],
+      isError: true,
+    };
+  }
+
+  return {
+    content: [{ type: 'text' as const, text: JSON.stringify(result.right, null, 2) }],
+  };
+};
+
+/**
+ * Format error response
+ */
+const formatErrorResponse = (error: unknown, operation: string) => {
+  const mcpError = fromError(error, operation);
+  return {
+    content: [{ type: 'text' as const, text: `Unexpected error: ${mcpError.message}` }],
+    isError: true,
+  };
+};
+
+/**
  * Register Effect-based tool handlers with the MCP server.
  * Uses dependency-injected runtime instead of global container.
  */
@@ -231,43 +328,10 @@ export function registerEffectToolHandlers(
     },
     async (args: unknown) => {
       try {
-        const inputSchema = z.object({
-          format: z.enum(['graphson', 'csv']),
-          data: z.string(),
-          options: z
-            .object({
-              batch_size: z.number().optional(),
-              clear_graph: z.boolean().optional(),
-              validate_schema: z.boolean().optional(),
-            })
-            .optional(),
-        });
-        const validatedInput = inputSchema.parse(args) as ImportDataInput;
-
-        const result = await bridge.runEffect(
-          pipe(
-            GremlinService,
-            Effect.flatMap(service => importGraphData(service, validatedInput)),
-            Effect.either
-          )
-        );
-
-        if (result._tag === 'Left') {
-          return {
-            content: [{ type: 'text' as const, text: `Import failed: ${result.left.message}` }],
-            isError: true,
-          };
-        }
-
-        return {
-          content: [{ type: 'text' as const, text: JSON.stringify(result.right, null, 2) }],
-        };
+        const validatedInput = validateImportInput(args);
+        return await executeImportOperation(bridge, validatedInput);
       } catch (error) {
-        const mcpError = fromError(error, 'Import Graph Data');
-        return {
-          content: [{ type: 'text' as const, text: `Unexpected error: ${mcpError.message}` }],
-          isError: true,
-        };
+        return formatErrorResponse(error, 'Import Graph Data');
       }
     }
   );
@@ -296,39 +360,10 @@ export function registerEffectToolHandlers(
     },
     async (args: unknown) => {
       try {
-        const inputSchema = z.object({
-          traversal_query: z.string(),
-          format: z.enum(['graphson', 'json', 'csv']),
-          max_depth: z.number().optional(),
-          include_properties: z.array(z.string()).optional(),
-          exclude_properties: z.array(z.string()).optional(),
-        });
-        const validatedInput = inputSchema.parse(args) as ExportSubgraphInput;
-
-        const result = await bridge.runEffect(
-          pipe(
-            GremlinService,
-            Effect.flatMap(service => exportSubgraph(service, validatedInput)),
-            Effect.either
-          )
-        );
-
-        if (result._tag === 'Left') {
-          return {
-            content: [{ type: 'text' as const, text: `Export failed: ${result.left.message}` }],
-            isError: true,
-          };
-        }
-
-        return {
-          content: [{ type: 'text' as const, text: JSON.stringify(result.right, null, 2) }],
-        };
+        const validatedInput = validateExportInput(args);
+        return await executeExportOperation(bridge, validatedInput);
       } catch (error) {
-        const mcpError = fromError(error, 'Export Subgraph');
-        return {
-          content: [{ type: 'text' as const, text: `Unexpected error: ${mcpError.message}` }],
-          isError: true,
-        };
+        return formatErrorResponse(error, 'Export Subgraph');
       }
     }
   );

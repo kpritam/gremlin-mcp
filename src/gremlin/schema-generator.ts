@@ -69,12 +69,58 @@ export const DEFAULT_SCHEMA_CONFIG: SchemaConfig = {
 };
 
 /**
+ * Execute the core schema generation logic
+ */
+const executeSchemaGeneration = (
+  g: any,
+  config: SchemaConfig,
+  startTime: number
+): Effect.Effect<GraphSchema, GremlinConnectionError> =>
+  Effect.gen(function* () {
+    const graphLabels = yield* getGraphLabels(g);
+    const counts = yield* getCounts(g, graphLabels, config);
+
+    // Use parallel streams for vertex and edge analysis
+    const [nodes, relationships, patterns] = yield* Effect.all(
+      [
+        analyzeAllVertexProperties(g, graphLabels.vertexLabels, config, counts.vertexCounts),
+        analyzeAllEdgeProperties(g, graphLabels.edgeLabels, config, counts.edgeCounts),
+        generateRelationshipPatterns(g, graphLabels.edgeLabels),
+      ],
+      { concurrency: 3 }
+    ); // Allow up to 3 concurrent operations
+
+    return yield* buildSchemaData(nodes, relationships, patterns, config, startTime);
+  });
+
+/**
+ * Apply timeout to schema generation with proper error handling
+ */
+const applySchemaTimeout = (
+  schemaGeneration: Effect.Effect<GraphSchema, GremlinConnectionError>,
+  config: SchemaConfig
+): Effect.Effect<GraphSchema, GremlinConnectionError> => {
+  const timeoutEffect = Effect.timeout(
+    schemaGeneration,
+    Duration.millis(config.timeoutMs || DEFAULT_SCHEMA_TIMEOUT_MS)
+  );
+
+  return Effect.catchTag(timeoutEffect, 'TimeoutException', () =>
+    Effect.fail(
+      Errors.connection(
+        `Schema generation timed out after ${config.timeoutMs || DEFAULT_SCHEMA_TIMEOUT_MS}ms`
+      )
+    )
+  );
+};
+
+/**
  * Generate comprehensive graph schema with optimizations
  */
 export const generateGraphSchema = (
   connectionState: ConnectionState,
   config: SchemaConfig = DEFAULT_SCHEMA_CONFIG
-): Effect.Effect<GraphSchema, GremlinConnectionError | never[]> =>
+): Effect.Effect<GraphSchema, GremlinConnectionError> =>
   Effect.gen(function* () {
     if (!connectionState.g) {
       return yield* Effect.fail(Errors.connection('Graph traversal source not available'));
@@ -83,36 +129,8 @@ export const generateGraphSchema = (
     const g = connectionState.g;
     const startTime = Date.now();
 
-    // Apply timeout to the entire schema generation process using streams
-    const schemaGeneration = Effect.gen(function* () {
-      const graphLabels = yield* getGraphLabels(g);
-      const counts = yield* getCounts(g, graphLabels, config);
-
-      // Use parallel streams for vertex and edge analysis
-      const [nodes, relationships, patterns] = yield* Effect.all(
-        [
-          analyzeAllVertexProperties(g, graphLabels.vertexLabels, config, counts.vertexCounts),
-          analyzeAllEdgeProperties(g, graphLabels.edgeLabels, config, counts.edgeCounts),
-          generateRelationshipPatterns(g, graphLabels.edgeLabels),
-        ],
-        { concurrency: 3 }
-      ); // Allow up to 3 concurrent operations
-
-      return yield* buildSchemaData(nodes, relationships, patterns, config, startTime);
-    });
-
-    const timeoutEffect = Effect.timeout(
-      schemaGeneration,
-      Duration.millis(config.timeoutMs || DEFAULT_SCHEMA_TIMEOUT_MS)
-    );
-
-    return yield* Effect.catchTag(timeoutEffect, 'TimeoutException', () =>
-      Effect.fail(
-        Errors.connection(
-          `Schema generation timed out after ${config.timeoutMs || DEFAULT_SCHEMA_TIMEOUT_MS}ms`
-        )
-      )
-    );
+    const schemaGeneration = executeSchemaGeneration(g, config, startTime);
+    return yield* applySchemaTimeout(schemaGeneration, config);
   });
 
 /**

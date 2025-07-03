@@ -58,6 +58,69 @@ const makeGremlinService = (config: AppConfigType): Effect.Effect<typeof Gremlin
     });
 
     /**
+     * Execute raw query against Gremlin client
+     */
+    const executeRawQuery = (
+      query: string,
+      client: any
+    ): Effect.Effect<unknown, GremlinQueryError> =>
+      Effect.tryPromise({
+        try: () => client.submit(query),
+        catch: (error: unknown) => Errors.query('Query execution failed', query, error),
+      });
+
+    /**
+     * Process ResultSet into array format
+     */
+    const processResultSet = (resultSet: unknown): unknown[] => {
+      // Handle ResultSet objects (with _items property)
+      if (resultSet && typeof resultSet === 'object' && '_items' in resultSet) {
+        return (resultSet as any)._items;
+      }
+      // Handle objects with toArray method
+      if (resultSet && typeof resultSet === 'object' && 'toArray' in resultSet) {
+        return (resultSet as any).toArray();
+      }
+      // Handle direct arrays
+      if (Array.isArray(resultSet)) {
+        return resultSet;
+      }
+      // Handle single values
+      return resultSet !== undefined ? [resultSet] : [];
+    };
+
+    /**
+     * Transform raw result set into parsed format
+     */
+    const transformGremlinResult = (
+      query: string,
+      resultSet: unknown
+    ): Effect.Effect<{ results: unknown[]; message: string }, GremlinQueryError> =>
+      Effect.tryPromise({
+        try: () => {
+          const dataArray = processResultSet(resultSet);
+          const parsed = parseGremlinResultsWithMetadata(dataArray);
+          return Promise.resolve({
+            results: parsed.results,
+            message: 'Query executed successfully',
+          });
+        },
+        catch: (error: unknown) => Errors.query('Result parsing failed', query, error),
+      });
+
+    /**
+     * Validate query result against schema
+     */
+    const validateQueryResult = (
+      query: string,
+      result: unknown
+    ): Effect.Effect<GremlinQueryResult, GremlinQueryError> =>
+      Effect.tryPromise({
+        try: () => Promise.resolve(GremlinQueryResultSchema.parse(result)),
+        catch: (error: unknown) => Errors.query('Result validation failed', query, error),
+      });
+
+    /**
      * Execute Gremlin query with proper error handling
      */
     const executeQuery = (
@@ -71,10 +134,7 @@ const makeGremlinService = (config: AppConfigType): Effect.Effect<typeof Gremlin
           return yield* Effect.fail(Errors.query('Client not initialized', query));
         }
 
-        const resultSet = yield* Effect.tryPromise({
-          try: () => state.client!.submit(query),
-          catch: (error: unknown) => Errors.query('Query execution failed', query, error),
-        });
+        const resultSet = yield* executeRawQuery(query, state.client);
 
         if (!isGremlinResult(resultSet)) {
           return yield* Effect.fail(
@@ -82,40 +142,8 @@ const makeGremlinService = (config: AppConfigType): Effect.Effect<typeof Gremlin
           );
         }
 
-        const parsedResults = yield* Effect.tryPromise({
-          try: () => {
-            let dataArray: unknown[] = [];
-
-            // Handle ResultSet objects (with _items property)
-            if (resultSet && typeof resultSet === 'object' && '_items' in resultSet) {
-              dataArray = (resultSet as any)._items;
-            }
-            // Handle objects with toArray method
-            else if (resultSet && typeof resultSet === 'object' && 'toArray' in resultSet) {
-              dataArray = (resultSet as any).toArray();
-            }
-            // Handle direct arrays
-            else if (Array.isArray(resultSet)) {
-              dataArray = resultSet;
-            }
-            // Handle single values
-            else {
-              dataArray = resultSet !== undefined ? [resultSet] : [];
-            }
-
-            const parsed = parseGremlinResultsWithMetadata(dataArray);
-            return Promise.resolve({
-              results: parsed.results,
-              message: 'Query executed successfully',
-            });
-          },
-          catch: (error: unknown) => Errors.query('Result parsing failed', query, error),
-        });
-
-        const validatedResult = yield* Effect.tryPromise({
-          try: () => Promise.resolve(GremlinQueryResultSchema.parse(parsedResults)),
-          catch: (error: unknown) => Errors.query('Result validation failed', query, error),
-        });
+        const parsedResults = yield* transformGremlinResult(query, resultSet);
+        const validatedResult = yield* validateQueryResult(query, parsedResults);
 
         return validatedResult;
       });

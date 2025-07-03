@@ -86,6 +86,57 @@ export const exportSubgraph = (
   });
 
 /**
+ * Clear graph data if requested
+ */
+const clearGraphIfRequested = (
+  service: typeof GremlinService.Service,
+  shouldClear: boolean | undefined
+): Effect.Effect<void, GremlinConnectionError | GremlinQueryError> =>
+  shouldClear
+    ? Effect.gen(function* () {
+        yield* service.executeQuery('g.V().drop()');
+        yield* service.executeQuery('g.E().drop()');
+        yield* Effect.logInfo('Graph cleared before import');
+      })
+    : Effect.void;
+
+/**
+ * Import vertices from GraphSON data
+ */
+const importVertices = (
+  service: typeof GremlinService.Service,
+  vertices: any[]
+): Effect.Effect<void, GremlinConnectionError | GremlinQueryError> =>
+  Effect.gen(function* () {
+    for (const vertex of vertices) {
+      const query = buildVertexInsertQuery(vertex);
+      yield* service.executeQuery(query);
+    }
+    yield* Effect.logInfo(`Imported ${vertices.length} vertices`);
+  });
+
+/**
+ * Import edges from GraphSON data
+ */
+const importEdges = (
+  service: typeof GremlinService.Service,
+  edges: any[]
+): Effect.Effect<void, GremlinConnectionError | GremlinQueryError> =>
+  Effect.gen(function* () {
+    for (const edge of edges) {
+      const query = buildEdgeInsertQuery(edge);
+      yield* service.executeQuery(query);
+    }
+    yield* Effect.logInfo(`Imported ${edges.length} edges`);
+  });
+
+/**
+ * Build GraphSON import summary
+ */
+const buildImportSummary = (vertexCount: number, edgeCount: number): string =>
+  `GraphSON import completed successfully. Vertices: ${vertexCount}, Edges: ${edgeCount}`;
+
+/**
  * Import GraphSON format data
  */
 const importGraphSON = (
@@ -96,37 +147,62 @@ const importGraphSON = (
     try {
       const data = JSON.parse(input.data);
 
-      // Clear graph if requested
-      if (input.options?.clear_graph) {
-        yield* service.executeQuery('g.V().drop()');
-        yield* service.executeQuery('g.E().drop()');
-        yield* Effect.logInfo('Graph cleared before import');
-      }
+      yield* clearGraphIfRequested(service, input.options?.clear_graph);
 
-      // Process vertices
       if (data.vertices) {
-        for (const vertex of data.vertices) {
-          const query = buildVertexInsertQuery(vertex);
-          yield* service.executeQuery(query);
-        }
-        yield* Effect.logInfo(`Imported ${data.vertices.length} vertices`);
+        yield* importVertices(service, data.vertices);
       }
 
-      // Process edges
       if (data.edges) {
-        for (const edge of data.edges) {
-          const query = buildEdgeInsertQuery(edge);
-          yield* service.executeQuery(query);
-        }
-        yield* Effect.logInfo(`Imported ${data.edges.length} edges`);
+        yield* importEdges(service, data.edges);
       }
 
-      return `GraphSON import completed successfully. Vertices: ${data.vertices?.length || 0}, Edges: ${data.edges?.length || 0}`;
+      return buildImportSummary(data.vertices?.length || 0, data.edges?.length || 0);
     } catch (error) {
       return yield* Effect.fail(
         Errors.resource('Failed to parse or import GraphSON data', 'graphson_import', error)
       );
     }
+  });
+
+/**
+ * Parse CSV data into headers and rows
+ */
+const parseCSVData = (csvData: string): { headers: string[]; dataRows: string[] } => {
+  const lines = csvData.split('\n').filter(line => line.trim());
+  const headers = lines[0]?.split(',').map(h => h.trim()) || [];
+  const dataRows = lines.slice(1);
+  return { headers, dataRows };
+};
+
+/**
+ * Process a single CSV row into vertex properties
+ */
+const processCSVRow = (row: string, headers: string[]): Record<string, string> => {
+  const values = row.split(',').map(v => v.trim());
+  return headers.reduce((props: Record<string, string>, header, index) => {
+    if (values[index]) {
+      props[header] = values[index];
+    }
+    return props;
+  }, {});
+};
+
+/**
+ * Import vertices from CSV rows
+ */
+const importCSVVertices = (
+  service: typeof GremlinService.Service,
+  dataRows: string[],
+  headers: string[]
+): Effect.Effect<void, GremlinConnectionError | GremlinQueryError> =>
+  Effect.gen(function* () {
+    for (const row of dataRows) {
+      const properties = processCSVRow(row, headers);
+      const query = buildCSVVertexInsertQuery(properties);
+      yield* service.executeQuery(query);
+    }
+    yield* Effect.logInfo(`Imported ${dataRows.length} vertices from CSV`);
   });
 
 /**
@@ -138,32 +214,11 @@ const importCSV = (
 ): Effect.Effect<string, ResourceError | GremlinConnectionError | GremlinQueryError> =>
   Effect.gen(function* () {
     try {
-      const lines = input.data.split('\n').filter(line => line.trim());
-      const headers = lines[0]?.split(',').map(h => h.trim());
-      const dataRows = lines.slice(1);
+      const { headers, dataRows } = parseCSVData(input.data);
 
-      // Clear graph if requested
-      if (input.options?.clear_graph) {
-        yield* service.executeQuery('g.V().drop()');
-        yield* service.executeQuery('g.E().drop()');
-        yield* Effect.logInfo('Graph cleared before import');
-      }
+      yield* clearGraphIfRequested(service, input.options?.clear_graph);
+      yield* importCSVVertices(service, dataRows, headers);
 
-      // Process each row as a vertex
-      for (const row of dataRows) {
-        const values = row.split(',').map(v => v.trim());
-        const properties = headers?.reduce((props: Record<string, string>, header, index) => {
-          if (values[index]) {
-            props[header] = values[index];
-          }
-          return props;
-        }, {});
-
-        const query = buildCSVVertexInsertQuery(properties || {});
-        yield* service.executeQuery(query);
-      }
-
-      yield* Effect.logInfo(`Imported ${dataRows.length} vertices from CSV`);
       return `CSV import completed successfully. Processed ${dataRows.length} rows.`;
     } catch (error) {
       return yield* Effect.fail(

@@ -96,12 +96,16 @@ export const SchemaMetadataSchema = z.object({
   relationship_count: z.number(),
   /** Number of relationship patterns */
   pattern_count: z.number(),
+  /** Time taken to generate the schema in milliseconds */
+  generation_time_ms: z.number().optional(),
   /** Optimization settings used */
   optimization_settings: z.object({
     sample_values_included: z.boolean(),
     max_enum_values: z.number(),
     counts_included: z.boolean(),
     enum_cardinality_threshold: z.number(),
+    timeout_ms: z.number().optional(),
+    batch_size: z.number().optional(),
   }),
   /** When the schema was generated */
   generated_at: z.string(),

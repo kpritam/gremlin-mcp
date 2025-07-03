@@ -29,6 +29,8 @@ export interface SchemaConfig {
   includeCounts: boolean;
   enumCardinalityThreshold: number;
   enumPropertyBlacklist: string[];
+  timeoutMs?: number;
+  batchSize?: number;
 }
 
 /**

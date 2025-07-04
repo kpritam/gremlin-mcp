@@ -7,15 +7,18 @@ alwaysApply: true
 
 This is a TypeScript-based MCP (Model Context Protocol) server that enables AI agents to interact with Gremlin-compatible graph databases. The server provides 6 tools and 2 resources for comprehensive graph database operations.
 
+**Implementation Status**: This project is fully implemented using **Effect.ts** functional programming patterns throughout.
+
 ## Architecture
 
 ### Core Components
 
-- **server.ts** - Main MCP server with lazy initialization
-- **gremlin/client.ts** - Gremlin client with connection management and schema caching
-- **handlers/** - Modular MCP request handlers (tools and resources)
-- **config.ts** - Zod-based configuration validation
-- **utils/** - Utility modules for type guards and result parsing
+- **server.ts** - Effect-based MCP server with graceful startup/shutdown using Effect composition
+- **gremlin/service.ts** - Effect-based Gremlin service with Context.Tag service pattern
+- **gremlin/schema-service.ts** - Effect-based schema management with dependency injection
+- **config.ts** - Effect.Config-based configuration validation (no backward compatibility)
+- **handlers/** - Effect-based modular MCP request handlers with service injection
+- **utils/** - Effect-based utility modules with composable operations
 
 ### Available Tools
 
@@ -41,9 +44,10 @@ Always follow the development rules in `RULES.md` - these are mandatory for all 
 
 - Use TypeScript with strict type checking
 - Follow ESLint and Prettier configurations
-- Use Zod for runtime validation
-- Implement comprehensive error handling
-- Write tests for all new functionality
+- Use Effect.ts functional programming patterns throughout
+- Use Zod for runtime validation with Effect.Config
+- Implement Effect-based error handling with custom error types
+- Write tests for all new functionality using Effect testing patterns
 
 ### Testing Requirements
 
@@ -54,10 +58,13 @@ Always follow the development rules in `RULES.md` - these are mandatory for all 
 
 ### Key Patterns
 
-- **Type Safety**: Use TypeScript + Zod runtime validation
-- **Modular Design**: Separate handlers for tools, resources, and utilities
-- **Configuration Management**: Zod-based environment variable validation
-- **Error Handling**: Comprehensive try/catch with detailed messages
+- **Effect.ts Functional Programming**: All operations use Effect's composable, type-safe approach
+- **Service-Oriented Architecture**: Dependencies managed through Effect's Context.Tag patterns
+- **Layer-Based Composition**: Application built using Effect.Layer for dependency resolution
+- **Immutable State Management**: All state changes handled through Effect.Ref
+- **Type Safety**: Comprehensive TypeScript with Effect's type system + Zod validation
+- **Configuration Management**: Effect.Config-based environment validation
+- **Error Handling**: Effect-based error handling with custom error types
 - **Generic Gremlin Support**: Compatible with any Gremlin database
 
 ## Development Commands
@@ -106,29 +113,32 @@ Optional:
 
 ### Source Code (`src/`)
 
-- **server.ts** - Main entry point, keep minimal with delegation
-- **config.ts** - All configuration validation, use Zod schemas
-- **constants.ts** - Application constants, tool names, default values
-- **logger.ts** - Winston configuration
-- **gremlin/** - Graph database related code
-  - **client.ts** - Main Gremlin client implementation
+- **server.ts** - Effect-based MCP server with graceful startup/shutdown
+- **config.ts** - Effect.Config-based configuration validation (no backward compatibility)
+- **constants.ts** - Application constants integrated with Effect configuration
+- **gremlin/** - Effect-based graph database code
+  - **service.ts** - GremlinService using Effect.Context.Tag pattern
+  - **schema-service.ts** - SchemaService with Effect dependency injection
   - **models.ts** - Zod schemas and TypeScript types
-- **handlers/** - MCP request handlers
-  - **index.ts** - Handler registration coordinator
-  - **resources.ts** - Resource handlers
-  - **tools.ts** - Tool handlers
-- **utils/** - Utility modules
-  - **type-guards.ts** - Runtime type checking
-  - **result-parser.ts** - Gremlin result parsing
-  - **result-metadata.ts** - Metadata extraction
+- **handlers/** - Effect-based MCP request handlers
+  - **resources.ts** - Effect-based resource handlers with service injection
+  - **tools.ts** - Effect-based tool handlers with createEffectTool helpers
+  - **runtime-context.ts** - ManagedRuntime container for Effect execution
+- **utils/** - Effect-based utility modules
+  - **type-guards.ts** - Runtime type checking functions
+  - **result-parser.ts** - Gremlin result parsing with metadata extraction
+  - **result-metadata.ts** - Metadata extraction from Gremlin results
+  - **effect-tool-helpers.ts** - Effect-based tool creation helpers
+  - **tool-helpers.ts** - Legacy tool helpers (Effect.ts based)
+  - **data-operations.ts** - Effect-based graph data import/export operations
+- **errors.ts** - Effect-based error management with custom error classes
 
 ### Test Code (`tests/`)
 
-- **setup.ts** - Jest configuration
-- **client.test.ts** - GremlinClient functionality
-- **models.test.ts** - Zod schema validation
-- **exceptions.test.ts** - Error handling
-- **mcp-integration.test.ts** - End-to-end integration
+- **setup.ts** - Jest configuration for ESM support
+- **config.test.ts** - Effect-based configuration management and validation
+- **models.test.ts** - Zod schema validation and type checking
+- **mcp-integration.test.ts** - Comprehensive integration tests against real Gremlin servers
 
 ## Common Tasks
 
@@ -136,16 +146,16 @@ Optional:
 
 1. Add tool name to `TOOL_NAMES` in `constants.ts`
 2. Define input schema in `gremlin/models.ts` if needed
-3. Implement tool handler in `handlers/tools.ts`
-4. Add tests in appropriate test file
+3. Implement Effect-based tool handler in `handlers/tools.ts` using `createEffectTool`
+4. Add tests using Effect testing patterns
 5. Update documentation
 
 ### Adding Configuration
 
-1. Add to Zod schema in `config.ts`
-2. Export from config object
+1. Add to Effect.Config schema in `config.ts`
+2. Export from config Effect composition
 3. Update environment variable documentation
-4. Add tests for validation
+4. Add tests for Effect.Config validation
 
 ### Debugging
 
@@ -156,16 +166,48 @@ Optional:
 
 ## Error Handling
 
-- Use `GremlinException` for graph-specific errors
-- Wrap all async operations in try/catch
-- Provide detailed error messages with context
-- Log errors with appropriate levels
-- Return structured error responses for tools
+- Use Effect-based custom error types (GremlinConnectionError, GremlinQueryError, etc.)
+- Use Effect.catchAll and Effect.either for structured error management
+- Provide detailed error messages with context and cause information
+- Log errors with appropriate levels using Effect composition
+- Return structured error responses for tools using Effect patterns
 
 ## Performance Considerations
 
-- Use connection pooling with idle timeout management
-- Implement schema caching with configurable refresh
-- Use batch processing for import operations
-- Lazy initialization for graph client
-- Optimize Gremlin queries for large datasets
+- Effect.Ref-based state management for thread-safe connection state
+- Effect-based schema caching with configurable refresh intervals
+- Effect-based batch processing for import operations with composable error handling
+- Lazy service initialization through Effect's Layer system
+- Automatic cleanup using Effect.addFinalizer and managed runtimes
+- Optimize Gremlin queries for large datasets using Effect composition
+
+## Effect.ts Patterns
+
+### Service Definition
+```typescript
+const MyService = Context.Tag<MyService>()
+```
+
+### Layer Composition
+```typescript
+const AppLive = Layer.mergeAll(
+  GremlinServiceLive,
+  SchemaServiceLive,
+  ConfigLive
+)
+```
+
+### Error Handling
+```typescript
+const operation = pipe(
+  someEffect,
+  Effect.catchTag("MyError", (error) => 
+    Effect.fail(new MyCustomError({ cause: error }))
+  )
+)
+```
+
+### State Management
+```typescript
+const state = Effect.Ref.make(initialValue)
+```

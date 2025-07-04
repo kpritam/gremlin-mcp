@@ -33,14 +33,14 @@ const makeMcpServerService = Effect.gen(function* () {
 
   // Create MCP server instance
   const server = new McpServer({
-    name: config.serverName,
-    version: config.serverVersion,
+    name: config.server.name,
+    version: config.server.version,
   });
 
   yield* Effect.logInfo('✅ MCP Server instance created', {
     service: 'gremlin-mcp',
-    name: config.serverName,
-    version: config.serverVersion,
+    name: config.server.name,
+    version: config.server.version,
   });
 
   // Create runtime for handlers
@@ -103,9 +103,9 @@ const program = Effect.gen(function* () {
 
   yield* Effect.logInfo('🚀 Starting Gremlin MCP Server...', {
     service: 'gremlin-mcp',
-    version: config.serverVersion,
-    gremlinEndpoint: `${config.gremlinHost}:${config.gremlinPort}`,
-    logLevel: config.logLevel,
+    version: config.server.version,
+    gremlinEndpoint: `${config.gremlin.host}:${config.gremlin.port}`,
+    logLevel: config.logging.level,
   });
 
   // Get server service
@@ -126,7 +126,7 @@ const program = Effect.gen(function* () {
  */
 const createLoggerLayer = (config: AppConfigType) => {
   const logLevel = (() => {
-    switch (config.logLevel) {
+    switch (config.logging.level) {
       case 'error':
         return LogLevel.Error;
       case 'warn':

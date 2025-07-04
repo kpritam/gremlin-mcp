@@ -1,6 +1,7 @@
 /**
  * Effect-based error handling architecture for Gremlin MCP Server.
  * Provides typed error handling with Effect's error management system.
+ * Enhanced with comprehensive error hierarchy and recovery patterns.
  */
 
 import { Data } from 'effect';
@@ -179,7 +180,7 @@ export const Errors = {
 } as const;
 
 /**
- * Helper function to convert Error objects to GremlinMcpError with consistent formatting
+ * Helper function to convert Error objects to GremlinMcpError
  */
 export const fromError = (error: Error | unknown, context?: string): GremlinMcpError => {
   if (error instanceof Error) {
@@ -202,7 +203,7 @@ export const fromError = (error: Error | unknown, context?: string): GremlinMcpE
 };
 
 /**
- * Create contextual error with standardized operation context
+ * Create contextual error with operation context
  */
 export const createContextualError = (
   errorType: keyof typeof ERROR_PREFIXES,
@@ -230,20 +231,6 @@ export const createContextualError = (
     resource: operation,
     details: { originalError: error },
   });
-};
-
-/**
- * Create standardized error with operation context
- */
-export const withOperationContext = <T extends GremlinMcpError>(
-  errorFactory: () => T,
-  operation: string
-): T => {
-  const error = errorFactory();
-  return {
-    ...error,
-    message: `${error.message} (operation: ${operation})`,
-  } as T;
 };
 
 /**

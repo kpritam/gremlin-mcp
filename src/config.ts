@@ -1,5 +1,6 @@
 /**
- * Configuration module for Gremlin MCP Server using Effect Config.
+ * Enhanced configuration module for Gremlin MCP Server using Effect Config.
+ * Implements nested configuration patterns with comprehensive validation.
  */
 
 import { Config, Effect, pipe } from 'effect';
@@ -111,45 +112,83 @@ const GremlinSchemaIncludeCountsConfig = pipe(
 );
 
 /**
- * Complete configuration combining all individual configs
+ * Nested Gremlin connection configuration
  */
-export const AppConfig = Config.all({
+const GremlinConnectionConfig = Config.all({
   endpoint: GremlinEndpointConfig,
-  gremlinUseSSL: GremlinUseSslConfig,
-  gremlinUsername: GremlinUsernameConfig,
-  gremlinPassword: GremlinPasswordConfig,
-  logLevel: LogLevelConfig,
-  gremlinIdleTimeout: GremlinIdleTimeoutConfig,
-  gremlinEnumDiscoveryEnabled: GremlinEnumDiscoveryEnabledConfig,
-  gremlinEnumCardinalityThreshold: GremlinEnumCardinalityThresholdConfig,
-  gremlinEnumPropertyBlacklist: GremlinEnumPropertyBlacklistConfig,
-  gremlinSchemaIncludeSampleValues: GremlinSchemaIncludeSampleValuesConfig,
-  gremlinSchemaMaxEnumValues: GremlinSchemaMaxEnumValuesConfig,
-  gremlinSchemaIncludeCounts: GremlinSchemaIncludeCountsConfig,
+  useSSL: GremlinUseSslConfig,
+  username: GremlinUsernameConfig,
+  password: GremlinPasswordConfig,
+  idleTimeout: GremlinIdleTimeoutConfig,
 }).pipe(
   Config.map(config => ({
-    // Gremlin connection config
-    gremlinHost: config.endpoint.host,
-    gremlinPort: config.endpoint.port,
-    gremlinTraversalSource: config.endpoint.traversalSource,
-    gremlinUseSSL: config.gremlinUseSSL,
-    gremlinUsername: config.gremlinUsername,
-    gremlinPassword: config.gremlinPassword,
-    gremlinIdleTimeout: config.gremlinIdleTimeout,
-    gremlinEnumDiscoveryEnabled: config.gremlinEnumDiscoveryEnabled,
-    gremlinEnumCardinalityThreshold: config.gremlinEnumCardinalityThreshold,
-    gremlinEnumPropertyBlacklist: config.gremlinEnumPropertyBlacklist,
-    gremlinSchemaIncludeSampleValues: config.gremlinSchemaIncludeSampleValues,
-    gremlinSchemaMaxEnumValues: config.gremlinSchemaMaxEnumValues,
-    gremlinSchemaIncludeCounts: config.gremlinSchemaIncludeCounts,
-
-    // Server config
-    serverName: DEFAULTS.SERVER_NAME,
-    serverVersion: DEFAULTS.SERVER_VERSION,
-
-    // Logging config
-    logLevel: config.logLevel,
+    host: config.endpoint.host,
+    port: config.endpoint.port,
+    traversalSource: config.endpoint.traversalSource,
+    useSSL: config.useSSL,
+    username: config.username,
+    password: config.password,
+    idleTimeout: config.idleTimeout,
   }))
+);
+
+/**
+ * Schema discovery configuration with validation
+ */
+const SchemaDiscoveryConfig = Config.all({
+  enumDiscoveryEnabled: GremlinEnumDiscoveryEnabledConfig,
+  enumCardinalityThreshold: GremlinEnumCardinalityThresholdConfig,
+  enumPropertyBlacklist: GremlinEnumPropertyBlacklistConfig,
+  includeSampleValues: GremlinSchemaIncludeSampleValuesConfig,
+  maxEnumValues: GremlinSchemaMaxEnumValuesConfig,
+  includeCounts: GremlinSchemaIncludeCountsConfig,
+}).pipe(
+  Config.validate({
+    message: 'Schema configuration validation failed',
+    validation: config =>
+      config.enumCardinalityThreshold > 0 &&
+      config.maxEnumValues > 0 &&
+      config.enumPropertyBlacklist.length > 0,
+  })
+);
+
+/**
+ * Server configuration with defaults
+ */
+const ServerConfig = Config.succeed({
+  name: DEFAULTS.SERVER_NAME,
+  version: DEFAULTS.SERVER_VERSION,
+});
+
+/**
+ * Logging configuration with enhanced validation
+ */
+const LoggingConfig = Config.all({
+  level: LogLevelConfig,
+}).pipe(
+  Config.map(config => ({
+    level: config.level,
+    structured: true, // Always use structured logging
+  }))
+);
+
+/**
+ * Complete application configuration with clean nested structure
+ */
+export const AppConfig = Config.all({
+  gremlin: GremlinConnectionConfig,
+  schema: SchemaDiscoveryConfig,
+  server: ServerConfig,
+  logging: LoggingConfig,
+}).pipe(
+  Config.validate({
+    message: 'Application configuration validation failed',
+    validation: config =>
+      config.gremlin.host.length > 0 &&
+      config.gremlin.port > 0 &&
+      config.gremlin.port < 65536 &&
+      config.schema.maxEnumValues <= 100, // Reasonable limit
+  })
 );
 
 export type AppConfigType = Effect.Effect.Success<typeof AppConfig>;

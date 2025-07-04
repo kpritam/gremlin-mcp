@@ -36,20 +36,28 @@ describe('Effect-based Configuration Management', () => {
       const result = Effect.runSync(AppConfig);
 
       expect(result).toMatchObject({
-        gremlinHost: 'localhost',
-        gremlinPort: 8182,
-        gremlinTraversalSource: 'g',
-        gremlinUseSSL: false,
-        gremlinIdleTimeout: 300,
-        gremlinEnumDiscoveryEnabled: true,
-        gremlinEnumCardinalityThreshold: 10,
-        gremlinEnumPropertyBlacklist: ['id', 'pk', 'name'],
-        gremlinSchemaIncludeSampleValues: false,
-        gremlinSchemaMaxEnumValues: 10,
-        gremlinSchemaIncludeCounts: true,
-        logLevel: 'info',
-        serverName: 'gremlin-mcp',
-        serverVersion: '0.0.3',
+        gremlin: {
+          host: 'localhost',
+          port: 8182,
+          traversalSource: 'g',
+          useSSL: false,
+          idleTimeout: 300,
+        },
+        schema: {
+          enumDiscoveryEnabled: true,
+          enumCardinalityThreshold: 10,
+          enumPropertyBlacklist: ['id', 'pk', 'name'],
+          includeSampleValues: false,
+          maxEnumValues: 10,
+          includeCounts: true,
+        },
+        logging: {
+          level: 'info',
+        },
+        server: {
+          name: 'gremlin-mcp',
+          version: '0.0.3',
+        },
       });
     });
 
@@ -59,17 +67,23 @@ describe('Effect-based Configuration Management', () => {
       const result = Effect.runSync(AppConfig);
 
       expect(result).toMatchObject({
-        gremlinHost: 'localhost',
-        gremlinPort: 8182,
-        gremlinTraversalSource: 'g',
-        gremlinUseSSL: false,
-        gremlinIdleTimeout: 300,
-        gremlinEnumDiscoveryEnabled: true,
-        gremlinEnumCardinalityThreshold: 10,
-        gremlinSchemaIncludeSampleValues: false,
-        gremlinSchemaMaxEnumValues: 10,
-        gremlinSchemaIncludeCounts: true,
-        logLevel: 'info',
+        gremlin: {
+          host: 'localhost',
+          port: 8182,
+          traversalSource: 'g',
+          useSSL: false,
+          idleTimeout: 300,
+        },
+        schema: {
+          enumDiscoveryEnabled: true,
+          enumCardinalityThreshold: 10,
+          includeSampleValues: false,
+          maxEnumValues: 10,
+          includeCounts: true,
+        },
+        logging: {
+          level: 'info',
+        },
       });
     });
 
@@ -88,10 +102,10 @@ describe('Effect-based Configuration Management', () => {
 
       const result = Effect.runSync(AppConfig);
 
-      expect(result.gremlinUseSSL).toBe(true);
-      expect(result.gremlinEnumDiscoveryEnabled).toBe(true);
-      expect(result.gremlinSchemaIncludeSampleValues).toBe(true);
-      expect(result.gremlinSchemaIncludeCounts).toBe(false);
+      expect(result.gremlin.useSSL).toBe(true);
+      expect(result.schema.enumDiscoveryEnabled).toBe(true);
+      expect(result.schema.includeSampleValues).toBe(true);
+      expect(result.schema.includeCounts).toBe(false);
     });
 
     it('should parse endpoint with traversal source', async () => {
@@ -99,9 +113,9 @@ describe('Effect-based Configuration Management', () => {
 
       const result = Effect.runSync(AppConfig);
 
-      expect(result.gremlinHost).toBe('localhost');
-      expect(result.gremlinPort).toBe(8182);
-      expect(result.gremlinTraversalSource).toBe('custom');
+      expect(result.gremlin.host).toBe('localhost');
+      expect(result.gremlin.port).toBe(8182);
+      expect(result.gremlin.traversalSource).toBe('custom');
     });
 
     it('should parse comma-separated blacklist', async () => {
@@ -110,7 +124,7 @@ describe('Effect-based Configuration Management', () => {
 
       const result = Effect.runSync(AppConfig);
 
-      expect(result.gremlinEnumPropertyBlacklist).toEqual(['id', 'pk', 'name', 'description']);
+      expect(result.schema.enumPropertyBlacklist).toEqual(['id', 'pk', 'name', 'description']);
     });
 
     it('should validate log level enum', async () => {
@@ -119,7 +133,7 @@ describe('Effect-based Configuration Management', () => {
 
       const result = Effect.runSync(AppConfig);
 
-      expect(result.logLevel).toBe('debug');
+      expect(result.logging.level).toBe('debug');
     });
 
     it('should fail with invalid log level', () => {
@@ -137,9 +151,9 @@ describe('Effect-based Configuration Management', () => {
 
       const result = Effect.runSync(AppConfig);
 
-      expect(result.gremlinIdleTimeout).toBe(600);
-      expect(result.gremlinEnumCardinalityThreshold).toBe(20);
-      expect(result.gremlinSchemaMaxEnumValues).toBe(15);
+      expect(result.gremlin.idleTimeout).toBe(600);
+      expect(result.schema.enumCardinalityThreshold).toBe(20);
+      expect(result.schema.maxEnumValues).toBe(15);
     });
 
     it('should handle optional authentication fields', async () => {
@@ -149,8 +163,8 @@ describe('Effect-based Configuration Management', () => {
 
       const result = Effect.runSync(AppConfig);
 
-      expect(result.gremlinUsername).toBeDefined();
-      expect(result.gremlinPassword).toBeDefined();
+      expect(result.gremlin.username).toBeDefined();
+      expect(result.gremlin.password).toBeDefined();
     });
 
     it('should handle missing optional authentication fields', async () => {
@@ -160,8 +174,8 @@ describe('Effect-based Configuration Management', () => {
 
       const result = Effect.runSync(AppConfig);
 
-      expect(result.gremlinUsername).toBeDefined(); // Should be Option.none()
-      expect(result.gremlinPassword).toBeDefined(); // Should be Option.none()
+      expect(result.gremlin.username).toBeDefined(); // Should be Option.none()
+      expect(result.gremlin.password).toBeDefined(); // Should be Option.none()
     });
   });
 
@@ -198,20 +212,20 @@ describe('Effect-based Configuration Management', () => {
       const result = Effect.runSync(AppConfig);
 
       // Check all required fields are present
-      expect(result.gremlinHost).toBeDefined();
-      expect(result.gremlinPort).toBeDefined();
-      expect(result.gremlinTraversalSource).toBeDefined();
-      expect(result.gremlinUseSSL).toBeDefined();
-      expect(result.gremlinIdleTimeout).toBeDefined();
-      expect(result.gremlinEnumDiscoveryEnabled).toBeDefined();
-      expect(result.gremlinEnumCardinalityThreshold).toBeDefined();
-      expect(result.gremlinEnumPropertyBlacklist).toBeDefined();
-      expect(result.gremlinSchemaIncludeSampleValues).toBeDefined();
-      expect(result.gremlinSchemaMaxEnumValues).toBeDefined();
-      expect(result.gremlinSchemaIncludeCounts).toBeDefined();
-      expect(result.serverName).toBeDefined();
-      expect(result.serverVersion).toBeDefined();
-      expect(result.logLevel).toBeDefined();
+      expect(result.gremlin.host).toBeDefined();
+      expect(result.gremlin.port).toBeDefined();
+      expect(result.gremlin.traversalSource).toBeDefined();
+      expect(result.gremlin.useSSL).toBeDefined();
+      expect(result.gremlin.idleTimeout).toBeDefined();
+      expect(result.schema.enumDiscoveryEnabled).toBeDefined();
+      expect(result.schema.enumCardinalityThreshold).toBeDefined();
+      expect(result.schema.enumPropertyBlacklist).toBeDefined();
+      expect(result.schema.includeSampleValues).toBeDefined();
+      expect(result.schema.maxEnumValues).toBeDefined();
+      expect(result.schema.includeCounts).toBeDefined();
+      expect(result.server.name).toBeDefined();
+      expect(result.server.version).toBeDefined();
+      expect(result.logging.level).toBeDefined();
     });
 
     it('should have correct default values', async () => {
@@ -219,15 +233,15 @@ describe('Effect-based Configuration Management', () => {
 
       const result = Effect.runSync(AppConfig);
 
-      expect(result.gremlinTraversalSource).toBe('g');
-      expect(result.gremlinUseSSL).toBe(false);
-      expect(result.gremlinIdleTimeout).toBe(300);
-      expect(result.gremlinEnumDiscoveryEnabled).toBe(true);
-      expect(result.gremlinEnumCardinalityThreshold).toBe(10);
-      expect(result.gremlinSchemaIncludeSampleValues).toBe(false);
-      expect(result.gremlinSchemaMaxEnumValues).toBe(10);
-      expect(result.gremlinSchemaIncludeCounts).toBe(true);
-      expect(result.logLevel).toBe('info');
+      expect(result.gremlin.traversalSource).toBe('g');
+      expect(result.gremlin.useSSL).toBe(false);
+      expect(result.gremlin.idleTimeout).toBe(300);
+      expect(result.schema.enumDiscoveryEnabled).toBe(true);
+      expect(result.schema.enumCardinalityThreshold).toBe(10);
+      expect(result.schema.includeSampleValues).toBe(false);
+      expect(result.schema.maxEnumValues).toBe(10);
+      expect(result.schema.includeCounts).toBe(true);
+      expect(result.logging.level).toBe('info');
     });
 
     it('should use Effect for type-safe configuration access', () => {

@@ -231,6 +231,20 @@ export const GremlinStructuredResultSchema = z.discriminatedUnion('type', [
 ]);
 
 /**
+ * Schema for generic objects (only objects without a 'type' field)
+ */
+const GenericObjectSchema = z
+  .record(z.unknown())
+  .refine(obj => !('type' in obj) || typeof obj['type'] !== 'string', {
+    message: "Objects with 'type' field must use structured schemas",
+  });
+
+/**
+ * Forward declaration for recursive array validation
+ */
+const ValidatedArraySchema: z.ZodType<unknown[]> = z.lazy(() => z.array(GremlinResultItemSchema));
+
+/**
  * Union type for all possible Gremlin result types (including primitives)
  */
 export const GremlinResultItemSchema = z.union([
@@ -240,8 +254,8 @@ export const GremlinResultItemSchema = z.union([
   z.number(),
   z.boolean(),
   z.null(),
-  z.array(z.unknown()),
-  z.record(z.unknown()),
+  ValidatedArraySchema,
+  GenericObjectSchema,
 ]);
 
 export type GremlinStructuredResult = z.infer<typeof GremlinStructuredResultSchema>;

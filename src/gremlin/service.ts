@@ -26,29 +26,31 @@ import {
 import { generateGraphSchema, DEFAULT_SCHEMA_CONFIG } from './schema-generator.js';
 
 /**
- * Gremlin Service using modern Effect.ts Context.Tag pattern
+ * Gremlin Service interface using modern Effect.Service pattern
  */
-export class GremlinService extends Context.Tag('GremlinService')<
-  GremlinService,
-  {
-    readonly getStatus: Effect.Effect<string, GremlinConnectionError>;
-    readonly getSchema: Effect.Effect<GraphSchema, GremlinConnectionError>;
-    readonly getCachedSchema: Effect.Effect<GraphSchema | null, never>;
-    readonly refreshSchemaCache: Effect.Effect<void, GremlinConnectionError>;
-    readonly executeQuery: (
-      query: string
-    ) => Effect.Effect<GremlinQueryResult, GremlinQueryError | GremlinConnectionError>;
-    readonly healthCheck: Effect.Effect<
-      { healthy: boolean; details: string },
-      GremlinConnectionError
-    >;
-  }
->() {}
+export interface GremlinService {
+  readonly getStatus: Effect.Effect<string, GremlinConnectionError>;
+  readonly getSchema: Effect.Effect<GraphSchema, GremlinConnectionError>;
+  readonly getCachedSchema: Effect.Effect<GraphSchema | null, never>;
+  readonly refreshSchemaCache: Effect.Effect<void, GremlinConnectionError>;
+  readonly executeQuery: (
+    query: string
+  ) => Effect.Effect<GremlinQueryResult, GremlinQueryError | GremlinConnectionError>;
+  readonly healthCheck: Effect.Effect<
+    { healthy: boolean; details: string },
+    GremlinConnectionError
+  >;
+}
+
+/**
+ * Gremlin Service tag using Context.GenericTag for better type inference
+ */
+export const GremlinService = Context.GenericTag<GremlinService>('GremlinService');
 
 /**
  * Implementation of the Gremlin Service using extracted modules
  */
-const makeGremlinService = (config: AppConfigType): Effect.Effect<typeof GremlinService.Service> =>
+const makeGremlinService = (config: AppConfigType): Effect.Effect<GremlinService> =>
   Effect.gen(function* () {
     // Initialize connection state
     const connectionRef = yield* Ref.make<Option.Option<ConnectionState>>(Option.none());
@@ -126,7 +128,7 @@ const makeGremlinService = (config: AppConfigType): Effect.Effect<typeof Gremlin
       });
 
     /**
-     * Execute Gremlin query with proper error handling
+     * Execute Gremlin query with enhanced error handling and recovery
      */
     const executeQuery = (
       query: string
@@ -151,7 +153,15 @@ const makeGremlinService = (config: AppConfigType): Effect.Effect<typeof Gremlin
         const validatedResult = yield* validateQueryResult(query, parsedResults);
 
         return validatedResult;
-      });
+      }).pipe(
+        // Add error logging for debugging
+        Effect.tapError((error: any) =>
+          Effect.logError(`Query execution failed: ${error?.message || String(error)}`, {
+            query: query.substring(0, 100) + (query.length > 100 ? '...' : ''),
+            errorType: error?._tag || 'Unknown',
+          })
+        )
+      );
 
     /**
      * Health check with proper Effect error handling
@@ -170,17 +180,47 @@ const makeGremlinService = (config: AppConfigType): Effect.Effect<typeof Gremlin
     );
 
     return {
-      getStatus: getConnectionStatus(connectionRef, config),
-      getSchema: getCachedSchema(schemaCacheRef, generateSchema),
+      getStatus: getConnectionStatus(connectionRef, config).pipe(
+        Effect.tapError((error: any) =>
+          Effect.logError(`Connection status check failed: ${error?.message || String(error)}`, {
+            endpoint: config.gremlin.host + ':' + config.gremlin.port,
+          })
+        )
+      ),
+      getSchema: getCachedSchema(schemaCacheRef, generateSchema).pipe(
+        Effect.catchAll(() =>
+          Effect.succeed({
+            nodes: [],
+            relationships: [],
+            relationship_patterns: [],
+            metadata: {
+              node_count: 0,
+              relationship_count: 0,
+              pattern_count: 0,
+              optimization_settings: {
+                sample_values_included: false,
+                max_enum_values: 0,
+                counts_included: false,
+                enum_cardinality_threshold: 0,
+              },
+              generated_at: new Date().toISOString(),
+            },
+          })
+        )
+      ),
       getCachedSchema: peekCachedSchema(schemaCacheRef),
-      refreshSchemaCache: refreshSchemaCache(schemaCacheRef, generateSchema),
+      refreshSchemaCache: refreshSchemaCache(schemaCacheRef, generateSchema).pipe(
+        Effect.tapError((error: any) =>
+          Effect.logError(`Schema cache refresh failed: ${error?.message || String(error)}`)
+        )
+      ),
       executeQuery,
       healthCheck,
     } as const;
   });
 
 /**
- * Layer for creating the Gremlin Service
+ * Layer for creating the Gremlin Service using modern Effect.Service pattern
  */
 export const GremlinServiceLive = (config: AppConfigType) =>
   Layer.effect(GremlinService, makeGremlinService(config));

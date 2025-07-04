@@ -30,16 +30,16 @@ export function calculateResultMetadata(results: GremlinResultItem[]): ResultMet
   results.forEach(result => {
     if (result && typeof result === 'object') {
       if ('type' in result) {
-        if (result.type === 'vertex') {
+        if (result['type'] === 'vertex') {
           vertexCount++;
           types.add('vertex');
-        } else if (result.type === 'edge') {
+        } else if (result['type'] === 'edge') {
           edgeCount++;
           types.add('edge');
-        } else if (result.type === 'path') {
+        } else if (result['type'] === 'path') {
           pathCount++;
           types.add('path');
-        } else if (result.type === 'property') {
+        } else if (result['type'] === 'property') {
           propertyCount++;
           types.add('property');
         }

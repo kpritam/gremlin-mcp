@@ -20,7 +20,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `npm test` - Run all tests with Jest
 - `npm run test:watch` - Run tests in watch mode for development
 - `npm run test:coverage` - Generate test coverage report
-- `npm run test:it` - Run integration tests against external Gremlin server
+- `npm run test:it` - Run integration tests against external Gremlin server (requires running Gremlin server on localhost:8182/g)
 
 ### Code Quality
 

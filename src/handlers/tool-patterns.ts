@@ -7,6 +7,7 @@ import { Effect, pipe } from 'effect';
 import { z } from 'zod';
 import { type EffectMcpBridge } from './effect-runtime-bridge.js';
 import { GremlinService } from '../gremlin/service.js';
+import type { GremlinService as GremlinServiceType } from '../gremlin/service.js';
 import { createContextualError, OPERATION_CONTEXTS } from '../errors.js';
 
 /**
@@ -22,7 +23,7 @@ export interface McpToolResponse {
  * Handler function type for tool operations
  */
 export type ToolHandler<T, R> = (
-  service: typeof GremlinService.Service,
+  service: GremlinServiceType,
   input: T
 ) => Effect.Effect<R, unknown>;
 
@@ -30,7 +31,9 @@ export type ToolHandler<T, R> = (
  * Creates a standardized success response
  */
 export const createSuccessResponse = (data: unknown): McpToolResponse => ({
-  content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
+  content: [
+    { type: 'text', text: typeof data === 'string' ? data : JSON.stringify(data, null, 2) },
+  ],
 });
 
 /**
@@ -61,6 +64,7 @@ export const formatOperationError = (
 
 /**
  * Generic tool handler factory that handles common patterns
+ * Enhanced with comprehensive error handling and logging
  */
 export const createToolHandler = <TInput, TOutput>(
   inputSchema: z.ZodSchema<TInput>,
@@ -75,19 +79,25 @@ export const createToolHandler = <TInput, TOutput>(
       // Validate input
       const validatedInput = inputSchema.parse(args);
 
-      // Execute handler with Effect
+      // Execute handler with enhanced error handling
       const result = await bridge.runEffect(
         pipe(
           GremlinService,
           Effect.flatMap(service => handler(service, validatedInput)),
+          Effect.tapError((error: any) =>
+            Effect.logError(`Tool execution failed: ${operationName}`, {
+              error: error?.message || String(error),
+              inputArgs: JSON.stringify(args).substring(0, 200),
+            })
+          ),
           Effect.either
         )
       );
 
-      // Handle result
+      // Handle result with improved error information
       if (result._tag === 'Left') {
         const errorResult = result as { left: { message: string } };
-        return formatOperationError(errorResult, operationName);
+        return createErrorResponse(errorResult.left.message);
       }
 
       return createSuccessResponse(result.right);
@@ -99,15 +109,26 @@ export const createToolHandler = <TInput, TOutput>(
 
 /**
  * Simple tool handler for operations that don't need input validation
+ * Enhanced with comprehensive error handling patterns
  */
 export const createSimpleToolHandler = <TOutput>(
-  handler: (service: typeof GremlinService.Service) => Effect.Effect<TOutput, unknown>,
+  handler: (service: GremlinServiceType) => Effect.Effect<TOutput, unknown>,
   errorMessage: string
 ) => {
   return async (bridge: EffectMcpBridge<GremlinService>): Promise<McpToolResponse> => {
     try {
       const result = await bridge.runEffect(
-        pipe(GremlinService, Effect.flatMap(handler), Effect.either)
+        pipe(
+          GremlinService,
+          Effect.flatMap(handler),
+          Effect.tapError((error: any) =>
+            Effect.logError(`Simple tool execution failed: ${errorMessage}`, {
+              error: error?.message || String(error),
+              handlerType: 'simple',
+            })
+          ),
+          Effect.either
+        )
       );
 
       if (result._tag === 'Left') {
@@ -124,18 +145,26 @@ export const createSimpleToolHandler = <TOutput>(
 
 /**
  * Query tool handler with standardized query validation and error handling
+ * Enhanced with query-specific error recovery patterns
  */
 export const createQueryToolHandler = (
-  handler: (
-    service: typeof GremlinService.Service,
-    query: string
-  ) => Effect.Effect<unknown, unknown>
+  handler: (service: GremlinServiceType, query: string) => Effect.Effect<unknown, unknown>
 ) => {
   const querySchema = z.object({ query: z.string() });
 
   return createToolHandler(
     querySchema,
-    (service, input) => handler(service, input.query),
+    (service, input) =>
+      pipe(
+        handler(service, input.query),
+        Effect.catchTags({
+          GremlinQueryError: (error: any) =>
+            Effect.logWarning(`Query execution failed: ${error.message}`, {
+              query: input.query,
+              error: error.message,
+            }).pipe(Effect.flatMap(() => Effect.fail(error))),
+        })
+      ),
     'Query execution'
   );
 };
@@ -179,7 +208,7 @@ export const createDataOperationHandler = <TInput>(
  * Schema tool handler with JSON response formatting
  */
 export const createSchemaToolHandler = (
-  handler: (service: typeof GremlinService.Service) => Effect.Effect<unknown, unknown>,
+  handler: (service: GremlinServiceType) => Effect.Effect<unknown, unknown>,
   errorMessage: string
 ) => {
   return async (bridge: EffectMcpBridge<GremlinService>): Promise<McpToolResponse> => {
@@ -216,10 +245,7 @@ export const createSchemaToolHandler = (
  * Query result handler with special error formatting
  */
 export const createQueryResultHandler = (
-  handler: (
-    service: typeof GremlinService.Service,
-    query: string
-  ) => Effect.Effect<unknown, unknown>
+  handler: (service: GremlinServiceType, query: string) => Effect.Effect<unknown, unknown>
 ) => {
   return async (
     bridge: EffectMcpBridge<GremlinService>,

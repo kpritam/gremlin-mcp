@@ -162,11 +162,11 @@ const getGraphLabels = (g: GraphTraversalSource) =>
     const [vertexLabels, edgeLabels] = yield* Effect.all([
       Effect.tryPromise({
         try: () => g.V().label().dedup().toList(),
-        catch: (error: unknown) => Errors.connection('Failed to get vertex labels', error),
+        catch: (error: unknown) => Errors.connection('Failed to get vertex labels', { error }),
       }),
       Effect.tryPromise({
         try: () => g.E().label().dedup().toList(),
-        catch: (error: unknown) => Errors.connection('Failed to get edge labels', error),
+        catch: (error: unknown) => Errors.connection('Failed to get edge labels', { error }),
       }),
     ]);
 
@@ -196,11 +196,11 @@ const getCounts = (
     const [vertexCounts, edgeCounts] = yield* Effect.all([
       Effect.tryPromise({
         try: () => g.V().groupCount().by(label()).next(),
-        catch: (error: unknown) => Errors.connection('Failed to get vertex counts', error),
+        catch: (error: unknown) => Errors.connection('Failed to get vertex counts', { error }),
       }),
       Effect.tryPromise({
         try: () => g.E().groupCount().by(label()).next(),
-        catch: (error: unknown) => Errors.connection('Failed to get edge counts', error),
+        catch: (error: unknown) => Errors.connection('Failed to get edge counts', { error }),
       }),
     ]);
 
@@ -243,7 +243,7 @@ const buildSchemaData = (
     catch: (error: unknown) => {
       console.error('Schema validation error:', error);
       console.error('Schema data that failed:', JSON.stringify(schemaData, null, 2));
-      return Errors.connection('Schema validation failed', error);
+      return Errors.connection('Schema validation failed', { error });
     },
   });
 };
@@ -271,8 +271,8 @@ const analyzeAllVertexProperties = (
       Effect.map(chunk => [...Chunk.toReadonlyArray(chunk)]), // Convert to mutable array
       Effect.mapError((error: unknown) =>
         error instanceof Error
-          ? Errors.connection('Failed to analyze vertex properties', error)
-          : Errors.connection('Failed to analyze vertex properties', error)
+          ? Errors.connection('Failed to analyze vertex properties', { error })
+          : Errors.connection('Failed to analyze vertex properties', { error })
       )
     );
   });
@@ -322,8 +322,8 @@ const analyzeAllEdgeProperties = (
       Effect.map(chunk => [...Chunk.toReadonlyArray(chunk)]), // Convert to mutable array
       Effect.mapError((error: unknown) =>
         error instanceof Error
-          ? Errors.connection('Failed to analyze edge properties', error)
-          : Errors.connection('Failed to analyze edge properties', error)
+          ? Errors.connection('Failed to analyze edge properties', { error })
+          : Errors.connection('Failed to analyze edge properties', { error })
       )
     );
   });
@@ -363,7 +363,7 @@ const batchAnalyzeVertexProperties = (
     const propertyKeys = yield* Effect.tryPromise({
       try: () => g.V().hasLabel(vertexLabel).limit(100).properties().key().dedup().toList(),
       catch: (error: unknown) =>
-        Errors.connection(`Failed to get properties for vertex ${vertexLabel}`, error),
+        Errors.connection(`Failed to get properties for vertex ${vertexLabel}`, { error }),
     });
 
     const keyList = propertyKeys as string[];
@@ -389,7 +389,7 @@ const batchAnalyzeEdgeProperties = (
     const propertyKeys = yield* Effect.tryPromise({
       try: () => g.E().hasLabel(edgeLabel).limit(100).properties().key().dedup().toList(),
       catch: (error: unknown) =>
-        Errors.connection(`Failed to get properties for edge ${edgeLabel}`, error),
+        Errors.connection(`Failed to get properties for edge ${edgeLabel}`, { error }),
     });
 
     const keyList = propertyKeys as string[];
@@ -433,7 +433,7 @@ const batchAnalyzeSingleProperty = (
           .limit(config.maxEnumValues + 1)
           .toList(),
       catch: (error: unknown) =>
-        Errors.connection(`Failed to get values for property ${propertyKey}`, error),
+        Errors.connection(`Failed to get values for property ${propertyKey}`, { error }),
     });
 
     const valueList = sampleValues as unknown[];
@@ -502,7 +502,8 @@ const generateRelationshipPatterns = (g: GraphTraversalSource, edgeLabels: strin
           .dedup()
           .limit(1000) // Increased limit since we're doing one query
           .toList(),
-      catch: (error: unknown) => Errors.connection('Failed to get relationship patterns', error),
+      catch: (error: unknown) =>
+        Errors.connection('Failed to get relationship patterns', { error }),
     });
 
     const resultList = allPatterns as { from: string; to: string; edge: string }[];

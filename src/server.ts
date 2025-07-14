@@ -14,7 +14,7 @@ import { GremlinServiceLive } from './gremlin/service.js';
 import { registerEffectToolHandlers } from './handlers/tools.js';
 import { registerEffectResourceHandlers } from './handlers/resources.js';
 import { createMcpHandlers } from './handlers/effect-runtime-bridge.js';
-import { fromError } from './errors.js';
+import { Errors } from './errors.js';
 
 /**
  * MCP Server Service tag (using latest Effect 3.16.10 patterns)
@@ -70,7 +70,13 @@ const makeMcpServerService = Effect.gen(function* () {
 
       yield* Effect.tryPromise({
         try: () => server.connect(transport),
-        catch: error => new Error(fromError(error, 'Server connection failed').message),
+        catch: error => {
+          const serverError = Errors.resource('Server connection failed', 'connection', {
+            error_type: error instanceof Error ? error.constructor.name : typeof error,
+            error_message: error instanceof Error ? error.message : String(error),
+          });
+          return new Error(serverError.message);
+        },
       });
 
       yield* Effect.logInfo('✅ Gremlin MCP Server started successfully', {
@@ -122,7 +128,41 @@ const program = Effect.gen(function* () {
 });
 
 /**
+ * Safely serialize log data to JSON, handling circular references and non-serializable objects
+ */
+const safeJsonStringify = (obj: unknown): string => {
+  try {
+    return JSON.stringify(obj, (_key, value) => {
+      // Handle circular references
+      if (typeof value === 'object' && value !== null) {
+        if (typeof value === 'function') {
+          return '[Function]';
+        }
+        if (value instanceof Error) {
+          return {
+            name: value.name,
+            message: value.message,
+            stack: value.stack,
+          };
+        }
+      }
+      return value;
+    });
+  } catch (error) {
+    // Fallback if JSON.stringify still fails
+    return JSON.stringify({
+      message: String(
+        typeof obj === 'object' && obj !== null && 'message' in obj ? obj.message : obj
+      ),
+      serialization_error: error instanceof Error ? error.message : 'Unknown serialization error',
+      timestamp: new Date().toISOString(),
+    });
+  }
+};
+
+/**
  * Enhanced logging configuration based on config
+ * CRITICAL: All logging must go to stderr to avoid interfering with MCP JSON responses
  */
 const createLoggerLayer = (config: AppConfigType) => {
   const logLevel = (() => {
@@ -144,16 +184,24 @@ const createLoggerLayer = (config: AppConfigType) => {
     Logger.replace(
       Logger.defaultLogger,
       Logger.make(({ logLevel: level, message, ...rest }) => {
-        const timestamp = new Date().toISOString();
-        const levelStr = level._tag.toUpperCase().padEnd(5);
-
-        if (level._tag === 'Fatal' || level._tag === 'Error') {
-          console.error(`[${timestamp}] ${levelStr} ${message}`, rest);
-        } else if (level._tag === 'Warning') {
-          console.warn(`[${timestamp}] ${levelStr} ${message}`, rest);
-        } else {
-          console.log(`[${timestamp}] ${levelStr} ${message}`, rest);
-        }
+        const logData = {
+          level: level._tag.toLowerCase(),
+          message,
+          // Safely extract serializable properties from rest
+          ...Object.fromEntries(
+            Object.entries(rest).filter(([key, _value]) => {
+              // Skip non-serializable Effect internals
+              if (key.startsWith('_') || key === 'span' || key === 'fiber') {
+                return false;
+              }
+              return true;
+            })
+          ),
+          timestamp: new Date().toISOString(),
+        };
+        // Ensure all logs go to stderr with safe serialization
+        process.stderr.write(`${safeJsonStringify(logData)}\n`);
+        return Effect.succeed(void 0);
       })
     ),
     Logger.minimumLogLevel(logLevel)
@@ -194,18 +242,43 @@ const withGracefulShutdown = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.E
  * Main entry point with full Effect composition
  */
 const main = Effect.gen(function* () {
-  // Add startup logging before anything else
-  console.info('🎬 Gremlin MCP Server executable started');
-  console.info('📋 Process info:', {
-    pid: process.pid,
-    nodeVersion: process.versions.node,
-    platform: process.platform,
-    argv: process.argv,
-    cwd: process.cwd(),
-  });
+  // Add startup logging before anything else - CRITICAL: Use stderr only
+  const startupInfo = {
+    level: 'info',
+    message: 'Gremlin MCP Server executable started',
+    process_info: {
+      pid: process.pid,
+      node_version: process.versions.node,
+      platform: process.platform,
+      argv: process.argv,
+      cwd: process.cwd(),
+    },
+    timestamp: new Date().toISOString(),
+  };
+  process.stderr.write(`${JSON.stringify(startupInfo)}\n`);
 
   // Get configuration early for logging setup
   const config = yield* AppConfig;
+
+  // Log configuration
+  const configInfo = {
+    level: 'info',
+    message: 'Configuration loaded',
+    config: {
+      gremlin: {
+        host: config.gremlin.host,
+        port: config.gremlin.port,
+        use_ssl: config.gremlin.useSSL,
+        traversal_source: config.gremlin.traversalSource,
+        idle_timeout: config.gremlin.idleTimeout,
+      },
+      logging: {
+        level: config.logging.level,
+      },
+    },
+    timestamp: new Date().toISOString(),
+  };
+  process.stderr.write(`${JSON.stringify(configInfo)}\n`);
 
   // Run the main program with all services provided
   yield* pipe(
@@ -215,18 +288,17 @@ const main = Effect.gen(function* () {
   );
 }).pipe(
   Effect.catchAll((error: unknown) =>
-    Effect.gen(function* () {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      const errorStack = error instanceof Error ? error.stack : undefined;
-
-      yield* Effect.logError('❌ Unhandled error in main', {
-        service: 'gremlin-mcp',
-        error: errorMessage,
-        stack: errorStack,
-      });
-
-      // Exit with error code
-      yield* Effect.sync(() => process.exit(1));
+    Effect.sync(() => {
+      const errorData = {
+        level: 'error',
+        message: 'Fatal error in main program',
+        error: error instanceof Error ? error.message : String(error),
+        error_type: error instanceof Error ? error.constructor.name : typeof error,
+        stack: error instanceof Error ? error.stack : undefined,
+        timestamp: new Date().toISOString(),
+      };
+      process.stderr.write(`${JSON.stringify(errorData)}\n`);
+      process.exit(1);
     })
   )
 );

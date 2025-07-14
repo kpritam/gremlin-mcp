@@ -40,26 +40,34 @@ export const createScopedConnection = (
             }
           : {};
 
+      // Configure client with logging to stderr
+      const clientConfig = {
+        traversalSource: config.gremlin.traversalSource,
+        ...authConfig,
+        log: {
+          level: config.logging?.level || 'info',
+          stream: process.stderr,
+        },
+      };
+
       const client = yield* Effect.tryPromise({
-        try: () =>
-          Promise.resolve(
-            new Client(connectionUrl, {
-              traversalSource: config.gremlin.traversalSource,
-              ...authConfig,
-            })
-          ),
-        catch: error => Errors.connection('Failed to create Gremlin client', error),
+        try: () => Promise.resolve(new Client(connectionUrl, clientConfig)),
+        catch: error => Errors.connection('Failed to create Gremlin client', { error }),
       });
 
+      // Configure remote connection with logging to stderr
+      const connectionConfig = {
+        traversalSource: config.gremlin.traversalSource,
+        ...authConfig,
+        log: {
+          level: config.logging?.level || 'info',
+          stream: process.stderr,
+        },
+      };
+
       const connection = yield* Effect.tryPromise({
-        try: () =>
-          Promise.resolve(
-            new DriverRemoteConnection(connectionUrl, {
-              traversalSource: config.gremlin.traversalSource,
-              ...authConfig,
-            })
-          ),
-        catch: error => Errors.connection('Failed to create remote connection', error),
+        try: () => Promise.resolve(new DriverRemoteConnection(connectionUrl, connectionConfig)),
+        catch: error => Errors.connection('Failed to create remote connection', { error }),
       });
 
       const g = gremlin.process.AnonymousTraversalSource.traversal().withRemote(connection);
@@ -67,7 +75,7 @@ export const createScopedConnection = (
       // Test the connection
       yield* Effect.tryPromise({
         try: () => g.V().limit(1).count().next(),
-        catch: (error: unknown) => Errors.connection('Connection test failed', error),
+        catch: (error: unknown) => Errors.connection('Connection test failed', { error }),
       });
 
       const state: ConnectionState = {
@@ -93,9 +101,8 @@ export const createScopedConnection = (
           yield* Effect.tryPromise({
             try: () => state.connection!.close(),
             catch: error =>
-              new GremlinConnectionError({
-                message: 'Failed to close Gremlin connection during release',
-                details: error,
+              Errors.connection('Failed to close Gremlin connection during release', {
+                error,
               }),
           }).pipe(
             Effect.catchAll(error =>
@@ -141,9 +148,8 @@ export const createConnectionPool = (): Effect.Effect<
                 yield* Effect.tryPromise({
                   try: () => state.connection!.close(),
                   catch: error =>
-                    new GremlinConnectionError({
-                      message: 'Failed to close Gremlin connection during pool cleanup',
-                      details: error,
+                    Errors.connection('Failed to close Gremlin connection during pool cleanup', {
+                      error,
                     }),
                 }).pipe(
                   Effect.catchAll(error =>
@@ -176,11 +182,7 @@ const closeConnections = (connectionRef: Ref.Ref<Option.Option<ConnectionState>>
           if (state.connection) {
             yield* Effect.tryPromise({
               try: () => state.connection!.close(),
-              catch: error =>
-                new GremlinConnectionError({
-                  message: 'Failed to close Gremlin connection',
-                  details: error,
-                }),
+              catch: error => Errors.connection('Failed to close Gremlin connection', { error }),
             }).pipe(
               Effect.catchAll(error =>
                 Effect.logWarning(`Error closing Gremlin connections: ${error.message}`)

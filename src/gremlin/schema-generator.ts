@@ -159,6 +159,8 @@ export const generateGraphSchema = (
  */
 const getGraphLabels = (g: GraphTraversalSource) =>
   Effect.gen(function* () {
+    yield* Effect.logInfo('Starting to fetch graph labels (vertices and edges)');
+
     const [vertexLabels, edgeLabels] = yield* Effect.all([
       Effect.tryPromise({
         try: () => g.V().label().dedup().toList(),
@@ -170,8 +172,11 @@ const getGraphLabels = (g: GraphTraversalSource) =>
       }),
     ]);
 
-    yield* Effect.logDebug(
-      `Found ${(vertexLabels as string[]).length} vertex labels and ${(edgeLabels as string[]).length} edge labels`
+    yield* Effect.logInfo(
+      `Found ${(vertexLabels as string[]).length} vertex labels: ${JSON.stringify(vertexLabels)}`
+    );
+    yield* Effect.logInfo(
+      `Found ${(edgeLabels as string[]).length} edge labels: ${JSON.stringify(edgeLabels)}`
     );
 
     return {
@@ -486,8 +491,13 @@ const analyzePropertyFromValues = (
  */
 const generateRelationshipPatterns = (g: GraphTraversalSource, edgeLabels: string[]) =>
   Effect.gen(function* () {
+    yield* Effect.logInfo(`Generating relationship patterns for ${edgeLabels.length} edge labels`);
+
+    // Don't depend on edgeLabels parameter - generate directly from database
     if (edgeLabels.length === 0) {
-      return [];
+      yield* Effect.logWarning(
+        'No edge labels provided, but generating relationship patterns directly from database'
+      );
     }
 
     // Get all patterns in a single query instead of per-label queries
@@ -506,12 +516,44 @@ const generateRelationshipPatterns = (g: GraphTraversalSource, edgeLabels: strin
         Errors.connection('Failed to get relationship patterns', { error }),
     });
 
-    const resultList = allPatterns as { from: string; to: string; edge: string }[];
-    return resultList
-      .map((result: { from: string; to: string; edge: string }) => ({
+    // Gremlin project() returns a Map-like object, need to extract properly
+    const resultList = (allPatterns as any[]).map((item: any) => {
+      // Handle both Map and plain object formats
+      if (item instanceof Map) {
+        return {
+          from: item.get('from'),
+          to: item.get('to'),
+          label: item.get('label'),
+        };
+      } else if (item && typeof item === 'object') {
+        return {
+          from: item.from || item['from'],
+          to: item.to || item['to'],
+          label: item.label || item['label'],
+        };
+      }
+      return { from: null, to: null, label: null };
+    });
+
+    yield* Effect.logInfo(`Retrieved ${resultList.length} raw patterns from database`);
+
+    const filteredPatterns = resultList
+      .filter(
+        (result: { from: any; to: any; label: any }) =>
+          result.from &&
+          result.to &&
+          result.label &&
+          typeof result.from === 'string' &&
+          typeof result.to === 'string' &&
+          typeof result.label === 'string'
+      )
+      .map((result: { from: string; to: string; label: string }) => ({
         left_node: result.from,
         right_node: result.to,
-        relation: result.edge,
-      }))
-      .filter(pattern => pattern.left_node && pattern.right_node && pattern.relation);
+        relation: result.label,
+      }));
+
+    yield* Effect.logInfo(`Filtered to ${filteredPatterns.length} valid patterns`);
+
+    return filteredPatterns;
   });

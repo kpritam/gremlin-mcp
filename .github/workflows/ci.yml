@@ -10,20 +10,14 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
-    strategy:
-      matrix:
-        node-version: [18.x, 20.x, 22.x]
-
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Use Node.js ${{ matrix.node-version }}
+    - name: Use Node.js latest
       uses: actions/setup-node@v4
       with:
-        node-version: ${{ matrix.node-version }}
-        cache: 'npm'
-        registry-url: 'https://registry.npmjs.org'
+        node-version: latest
 
     - name: Install dependencies
       run: npm ci
@@ -47,7 +41,6 @@ jobs:
       run: npm run test:coverage
 
     - name: Upload test coverage
-      if: matrix.node-version == '20.x'
       uses: actions/upload-artifact@v4
       with:
         name: coverage-report
@@ -59,12 +52,10 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Use Node.js 20.x
+    - name: Use Node.js latest
       uses: actions/setup-node@v4
       with:
-        node-version: 20.x
-        cache: 'npm'
-        registry-url: 'https://registry.npmjs.org'
+        node-version: latest
 
     - name: Install dependencies
       run: npm ci
@@ -89,12 +80,10 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Use Node.js 20.x
+    - name: Use Node.js latest
       uses: actions/setup-node@v4
       with:
-        node-version: 20.x
-        cache: 'npm'
-        registry-url: 'https://registry.npmjs.org'
+        node-version: latest
 
     - name: Install dependencies
       run: npm ci

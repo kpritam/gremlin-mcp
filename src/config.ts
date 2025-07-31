@@ -135,14 +135,15 @@ const GremlinConnectionConfig = Config.all({
 /**
  * Schema discovery configuration with validation
  */
-const SchemaDiscoveryConfig = Config.all({
-  enumDiscoveryEnabled: GremlinEnumDiscoveryEnabledConfig,
-  enumCardinalityThreshold: GremlinEnumCardinalityThresholdConfig,
-  enumPropertyBlacklist: GremlinEnumPropertyBlacklistConfig,
-  includeSampleValues: GremlinSchemaIncludeSampleValuesConfig,
-  maxEnumValues: GremlinSchemaMaxEnumValuesConfig,
-  includeCounts: GremlinSchemaIncludeCountsConfig,
-}).pipe(
+const SchemaDiscoveryConfig = pipe(
+  Config.all({
+    enumDiscoveryEnabled: GremlinEnumDiscoveryEnabledConfig,
+    enumCardinalityThreshold: GremlinEnumCardinalityThresholdConfig,
+    enumPropertyBlacklist: GremlinEnumPropertyBlacklistConfig,
+    includeSampleValues: GremlinSchemaIncludeSampleValuesConfig,
+    maxEnumValues: GremlinSchemaMaxEnumValuesConfig,
+    includeCounts: GremlinSchemaIncludeCountsConfig,
+  }),
   Config.validate({
     message: 'Schema configuration validation failed',
     validation: config =>
@@ -175,12 +176,13 @@ const LoggingConfig = Config.all({
 /**
  * Complete application configuration with clean nested structure
  */
-export const AppConfig = Config.all({
-  gremlin: GremlinConnectionConfig,
-  schema: SchemaDiscoveryConfig,
-  server: ServerConfig,
-  logging: LoggingConfig,
-}).pipe(
+export const AppConfig = pipe(
+  Config.all({
+    gremlin: GremlinConnectionConfig,
+    schema: SchemaDiscoveryConfig,
+    server: ServerConfig,
+    logging: LoggingConfig,
+  }),
   Config.validate({
     message: 'Application configuration validation failed',
     validation: config =>

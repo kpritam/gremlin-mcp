@@ -56,7 +56,7 @@ describe('Effect-based Configuration Management', () => {
         },
         server: {
           name: 'gremlin-mcp',
-          version: '0.0.3',
+          version: '0.0.11-SNAPSHOT',
         },
       });
     });

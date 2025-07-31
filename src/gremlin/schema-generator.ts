@@ -2,7 +2,7 @@
  * Graph schema generation with comprehensive analysis and optimizations
  */
 
-import { Effect, Duration, Stream, Chunk } from 'effect';
+import { Effect, Duration } from 'effect';
 import gremlin from 'gremlin';
 import {
   GraphSchemaSchema,
@@ -32,43 +32,29 @@ interface SchemaCountData {
 const { inV, outV, label } = gremlin.process.statics;
 
 /**
- * Create a resourceful stream for processing database operations with backpressure and resource management
+ * Process items in batches with controlled concurrency
  */
-const createBatchedStream = <T, R>(
+const processBatched = <T, R, E>(
   items: T[],
   batchSize: number,
-  processor: (item: T) => Effect.Effect<R, unknown>
-): Stream.Stream<R, unknown> =>
-  Stream.fromIterable(items).pipe(
-    Stream.grouped(batchSize),
-    Stream.mapEffect(chunk =>
-      // Use acquireUseRelease for resource management around batch processing
-      Effect.acquireUseRelease(
-        // Acquire: Log start of batch processing
-        Effect.gen(function* () {
-          yield* Effect.logDebug(`Starting batch processing with ${Chunk.size(chunk)} items`);
-          return { batchSize: Chunk.size(chunk), startTime: Date.now() };
-        }),
-        // Use: Process the batch with controlled concurrency
-        _resource =>
-          Effect.gen(function* () {
-            return yield* Effect.all(
-              Chunk.toReadonlyArray(Chunk.map(chunk, processor)),
-              { concurrency: Math.min(batchSize, 10) } // Limit concurrency to prevent DB overload
-            );
-          }),
-        // Release: Log completion and cleanup
-        resource =>
-          Effect.gen(function* () {
-            const duration = Date.now() - resource.startTime;
-            yield* Effect.logDebug(
-              `Completed batch of ${resource.batchSize} items in ${duration}ms`
-            );
-          })
-      )
-    ),
-    Stream.flatMap(results => Stream.fromIterable(results))
-  );
+  processor: (item: T) => Effect.Effect<R, E>
+): Effect.Effect<R[], E> =>
+  Effect.gen(function* () {
+    const batches: T[][] = [];
+    for (let i = 0; i < items.length; i += batchSize) {
+      batches.push(items.slice(i, i + batchSize));
+    }
+
+    const results: R[] = [];
+    for (const batch of batches) {
+      const batchResults = yield* Effect.all(batch.map(processor), {
+        concurrency: Math.min(batchSize, 10),
+      });
+      results.push(...batchResults);
+    }
+
+    return results;
+  });
 
 // Constants
 const DEFAULT_MAX_ENUM_VALUES = 10;
@@ -254,7 +240,7 @@ const buildSchemaData = (
 };
 
 /**
- * Analyze all vertex properties using resourceful streams
+ * Analyze all vertex properties with batched processing
  */
 const analyzeAllVertexProperties = (
   g: GraphTraversalSource,
@@ -266,19 +252,11 @@ const analyzeAllVertexProperties = (
     const batchSize = config.batchSize || DEFAULT_BATCH_SIZE;
 
     yield* Effect.logInfo(
-      `Analyzing ${vertexLabels.length} vertex labels using streams with batch size ${batchSize}`
+      `Analyzing ${vertexLabels.length} vertex labels with batch size ${batchSize}`
     );
 
-    return yield* createBatchedStream(vertexLabels, batchSize, (vertexLabel: string) =>
+    return yield* processBatched(vertexLabels, batchSize, (vertexLabel: string) =>
       analyzeVertexPropertiesBatched(g, vertexLabel, config, vertexCounts)
-    ).pipe(
-      Stream.runCollect,
-      Effect.map(chunk => [...Chunk.toReadonlyArray(chunk)]), // Convert to mutable array
-      Effect.mapError((error: unknown) =>
-        error instanceof Error
-          ? Errors.connection('Failed to analyze vertex properties', { error })
-          : Errors.connection('Failed to analyze vertex properties', { error })
-      )
     );
   });
 
@@ -305,7 +283,7 @@ const analyzeVertexPropertiesBatched = (
   });
 
 /**
- * Analyze all edge properties using resourceful streams
+ * Analyze all edge properties with batched processing
  */
 const analyzeAllEdgeProperties = (
   g: GraphTraversalSource,
@@ -317,19 +295,11 @@ const analyzeAllEdgeProperties = (
     const batchSize = config.batchSize || DEFAULT_BATCH_SIZE;
 
     yield* Effect.logInfo(
-      `Analyzing ${edgeLabels.length} edge labels using streams with batch size ${batchSize}`
+      `Analyzing ${edgeLabels.length} edge labels with batch size ${batchSize}`
     );
 
-    return yield* createBatchedStream(edgeLabels, batchSize, (edgeLabel: string) =>
+    return yield* processBatched(edgeLabels, batchSize, (edgeLabel: string) =>
       analyzeEdgePropertiesBatched(g, edgeLabel, config, edgeCounts)
-    ).pipe(
-      Stream.runCollect,
-      Effect.map(chunk => [...Chunk.toReadonlyArray(chunk)]), // Convert to mutable array
-      Effect.mapError((error: unknown) =>
-        error instanceof Error
-          ? Errors.connection('Failed to analyze edge properties', { error })
-          : Errors.connection('Failed to analyze edge properties', { error })
-      )
     );
   });
 
@@ -373,11 +343,10 @@ const batchAnalyzeVertexProperties = (
 
     const keyList = propertyKeys as string[];
 
-    // Use streams to process properties with controlled concurrency
-    return yield* Stream.fromIterable(keyList).pipe(
-      Stream.mapEffect(key => batchAnalyzeSingleProperty(g, vertexLabel, key, config, true)),
-      Stream.runCollect,
-      Effect.map(chunk => [...Chunk.toReadonlyArray(chunk)]) // Convert to mutable array
+    // Process properties with controlled concurrency
+    return yield* Effect.all(
+      keyList.map(key => batchAnalyzeSingleProperty(g, vertexLabel, key, config, true)),
+      { concurrency: 5 }
     );
   });
 
@@ -399,11 +368,10 @@ const batchAnalyzeEdgeProperties = (
 
     const keyList = propertyKeys as string[];
 
-    // Use streams to process properties with controlled concurrency
-    return yield* Stream.fromIterable(keyList).pipe(
-      Stream.mapEffect(key => batchAnalyzeSingleProperty(g, edgeLabel, key, config, false)),
-      Stream.runCollect,
-      Effect.map(chunk => [...Chunk.toReadonlyArray(chunk)]) // Convert to mutable array
+    // Process properties with controlled concurrency
+    return yield* Effect.all(
+      keyList.map(key => batchAnalyzeSingleProperty(g, edgeLabel, key, config, false)),
+      { concurrency: 5 }
     );
   });
 
@@ -517,7 +485,7 @@ const generateRelationshipPatterns = (g: GraphTraversalSource, edgeLabels: strin
     });
 
     // Gremlin project() returns a Map-like object, need to extract properly
-    const resultList = (allPatterns as any[]).map((item: any) => {
+    const resultList = (allPatterns as unknown[]).map((item: unknown) => {
       // Handle both Map and plain object formats
       if (item instanceof Map) {
         return {
@@ -526,10 +494,11 @@ const generateRelationshipPatterns = (g: GraphTraversalSource, edgeLabels: strin
           label: item.get('label'),
         };
       } else if (item && typeof item === 'object') {
+        const obj = item as Record<string, unknown>;
         return {
-          from: item.from || item['from'],
-          to: item.to || item['to'],
-          label: item.label || item['label'],
+          from: obj['from'],
+          to: obj['to'],
+          label: obj['label'],
         };
       }
       return { from: null, to: null, label: null };
@@ -539,7 +508,7 @@ const generateRelationshipPatterns = (g: GraphTraversalSource, edgeLabels: strin
 
     const filteredPatterns = resultList
       .filter(
-        (result: { from: any; to: any; label: any }) =>
+        (result: { from: unknown; to: unknown; label: unknown }) =>
           result.from &&
           result.to &&
           result.label &&

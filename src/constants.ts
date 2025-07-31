@@ -4,7 +4,7 @@
 
 // Server Information
 export const SERVER_NAME = 'gremlin-mcp';
-export const SERVER_VERSION = '0.0.3';
+export const SERVER_VERSION = '0.0.11-SNAPSHOT';
 
 // MCP Resource URIs
 export const RESOURCE_URIS = {
@@ -24,14 +24,11 @@ export const TOOL_NAMES = {
 
 // Default Configuration Values
 export const DEFAULTS = {
-  HOST: 'localhost',
-  PORT: 8182,
   TRAVERSAL_SOURCE: 'g',
   USE_SSL: false,
   LOG_LEVEL: 'info' as const,
   SERVER_NAME: 'gremlin-mcp',
-  SERVER_VERSION: '0.0.3',
-  IDLE_TIMEOUT_SECONDS: 300,
+  SERVER_VERSION: '0.0.11-SNAPSHOT',
 } as const;
 
 // Connection Status Messages

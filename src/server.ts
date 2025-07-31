@@ -68,16 +68,16 @@ const makeMcpServerService = Effect.gen(function* () {
 
       yield* Effect.logInfo('🔗 Connecting server to transport...', { service: 'gremlin-mcp' });
 
-      yield* Effect.tryPromise({
-        try: () => server.connect(transport),
-        catch: error => {
+      yield* pipe(
+        Effect.tryPromise(() => server.connect(transport)),
+        Effect.mapError(error => {
           const serverError = Errors.resource('Server connection failed', 'connection', {
             error_type: error instanceof Error ? error.constructor.name : typeof error,
             error_message: error instanceof Error ? error.message : String(error),
           });
           return new Error(serverError.message);
-        },
-      });
+        })
+      );
 
       yield* Effect.logInfo('✅ Gremlin MCP Server started successfully', {
         service: 'gremlin-mcp',
@@ -95,7 +95,7 @@ const makeMcpServerService = Effect.gen(function* () {
 const McpServerServiceLive = Layer.effect(McpServerService, makeMcpServerService);
 
 /**
- * Application Layer composition
+ * Application Layer composition with explicit dependencies
  */
 const AppLayer = (config: AppConfigType) =>
   Layer.mergeAll(GremlinServiceLive(config), McpServerServiceLive);
@@ -128,33 +128,15 @@ const program = Effect.gen(function* () {
 });
 
 /**
- * Safely serialize log data to JSON, handling circular references and non-serializable objects
+ * Safely serialize log data to JSON
  */
 const safeJsonStringify = (obj: unknown): string => {
   try {
-    return JSON.stringify(obj, (_key, value) => {
-      // Handle circular references
-      if (typeof value === 'object' && value !== null) {
-        if (typeof value === 'function') {
-          return '[Function]';
-        }
-        if (value instanceof Error) {
-          return {
-            name: value.name,
-            message: value.message,
-            stack: value.stack,
-          };
-        }
-      }
-      return value;
-    });
-  } catch (error) {
-    // Fallback if JSON.stringify still fails
+    return JSON.stringify(obj, null, 2);
+  } catch {
     return JSON.stringify({
-      message: String(
-        typeof obj === 'object' && obj !== null && 'message' in obj ? obj.message : obj
-      ),
-      serialization_error: error instanceof Error ? error.message : 'Unknown serialization error',
+      message: String(obj),
+      serialization_error: true,
       timestamp: new Date().toISOString(),
     });
   }
@@ -165,20 +147,14 @@ const safeJsonStringify = (obj: unknown): string => {
  * CRITICAL: All logging must go to stderr to avoid interfering with MCP JSON responses
  */
 const createLoggerLayer = (config: AppConfigType) => {
-  const logLevel = (() => {
-    switch (config.logging.level) {
-      case 'error':
-        return LogLevel.Error;
-      case 'warn':
-        return LogLevel.Warning;
-      case 'info':
-        return LogLevel.Info;
-      case 'debug':
-        return LogLevel.Debug;
-      default:
-        return LogLevel.Info;
-    }
-  })();
+  const logLevelMap = {
+    error: LogLevel.Error,
+    warn: LogLevel.Warning,
+    info: LogLevel.Info,
+    debug: LogLevel.Debug,
+  } as const;
+
+  const logLevel = logLevelMap[config.logging.level] ?? LogLevel.Info;
 
   return Layer.mergeAll(
     Logger.replace(
@@ -187,19 +163,13 @@ const createLoggerLayer = (config: AppConfigType) => {
         const logData = {
           level: level._tag.toLowerCase(),
           message,
-          // Safely extract serializable properties from rest
           ...Object.fromEntries(
-            Object.entries(rest).filter(([key, _value]) => {
-              // Skip non-serializable Effect internals
-              if (key.startsWith('_') || key === 'span' || key === 'fiber') {
-                return false;
-              }
-              return true;
-            })
+            Object.entries(rest).filter(
+              ([key]) => !key.startsWith('_') && key !== 'span' && key !== 'fiber'
+            )
           ),
           timestamp: new Date().toISOString(),
         };
-        // Ensure all logs go to stderr with safe serialization
         process.stderr.write(`${safeJsonStringify(logData)}\n`);
         return Effect.succeed(void 0);
       })
@@ -286,7 +256,13 @@ const main = Effect.gen(function* () {
     Effect.provide(AppLayer(config)),
     Effect.provide(createLoggerLayer(config))
   );
-}).pipe(
+});
+
+/**
+ * Run the application with better error handling
+ */
+const runMain = pipe(
+  Effect.scoped(main),
   Effect.catchAll((error: unknown) =>
     Effect.sync(() => {
       const errorData = {
@@ -303,17 +279,9 @@ const main = Effect.gen(function* () {
   )
 );
 
-/**
- * Run the application
- */
-Effect.runPromiseExit(Effect.scoped(main))
-  .then(exit => {
-    if (exit._tag === 'Failure') {
-      console.error('❌ Fatal error:', exit.cause);
-      process.exit(1);
-    }
-  })
-  .catch(error => {
-    console.error('❌ Fatal error:', error);
+Effect.runPromiseExit(runMain).then(exit => {
+  if (exit._tag === 'Failure') {
+    console.error('❌ Fatal error:', exit.cause);
     process.exit(1);
-  });
+  }
+});

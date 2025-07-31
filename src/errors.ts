@@ -182,68 +182,14 @@ export const Errors = {
  * Helper function to convert Error objects to GremlinMcpError with consistent formatting
  */
 export const fromError = (error: Error | unknown, context?: string): GremlinMcpError => {
-  if (error instanceof Error) {
-    const message = context ? `${context}: ${error.message}` : error.message;
-    return new ResourceError({
-      message: `${ERROR_PREFIXES.RESOURCE}: ${message}`,
-      details: {
-        stack: error.stack,
-        name: error.name,
-        cause: error.cause,
-      },
-    });
-  }
+  const message = error instanceof Error ? error.message : String(error);
+  const finalMessage = context ? `${context}: ${message}` : message;
 
-  const message = context ? `${context}: ${String(error)}` : String(error);
   return new ResourceError({
-    message: `${ERROR_PREFIXES.RESOURCE}: ${message}`,
-    details: { originalError: error },
+    message: `${ERROR_PREFIXES.RESOURCE}: ${finalMessage}`,
+    details:
+      error instanceof Error ? { name: error.name, stack: error.stack } : { originalError: error },
   });
-};
-
-/**
- * Create contextual error with standardized operation context
- */
-export const createContextualError = (
-  errorType: keyof typeof ERROR_PREFIXES,
-  operation: string,
-  error: unknown
-): GremlinMcpError => {
-  const context = `${operation} operation`;
-
-  if (error instanceof Error) {
-    const message = `${ERROR_PREFIXES[errorType]}: ${context} - ${error.message}`;
-    return new ResourceError({
-      message,
-      resource: operation,
-      details: {
-        stack: error.stack,
-        name: error.name,
-        originalError: error,
-      },
-    });
-  }
-
-  const message = `${ERROR_PREFIXES[errorType]}: ${context} - ${String(error)}`;
-  return new ResourceError({
-    message,
-    resource: operation,
-    details: { originalError: error },
-  });
-};
-
-/**
- * Create standardized error with operation context
- */
-export const withOperationContext = <T extends GremlinMcpError>(
-  errorFactory: () => T,
-  operation: string
-): T => {
-  const error = errorFactory();
-  return {
-    ...error,
-    message: `${error.message} (operation: ${operation})`,
-  } as T;
 };
 
 /**

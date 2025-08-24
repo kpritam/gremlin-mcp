@@ -14,10 +14,11 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Use Node.js latest
+    - name: Use Node.js
       uses: actions/setup-node@v4
       with:
         node-version: latest
+        cache: 'npm'
 
     - name: Install dependencies
       run: npm ci
@@ -52,10 +53,11 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Use Node.js latest
+    - name: Use Node.js
       uses: actions/setup-node@v4
       with:
         node-version: latest
+        cache: 'npm'
 
     - name: Install dependencies
       run: npm ci
@@ -80,10 +82,11 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Use Node.js latest
+    - name: Use Node.js
       uses: actions/setup-node@v4
       with:
         node-version: latest
+        cache: 'npm'
 
     - name: Install dependencies
       run: npm ci

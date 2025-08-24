@@ -7,7 +7,6 @@ import { Effect, pipe } from 'effect';
 import { z } from 'zod';
 import { type EffectMcpBridge } from './effect-runtime-bridge.js';
 import { GremlinService } from '../gremlin/service.js';
-import { OPERATION_CONTEXTS } from '../errors.js';
 
 /**
  * Standard MCP tool response structure
@@ -31,6 +30,13 @@ export type ToolHandler<T, R> = (
  */
 export const createSuccessResponse = (data: unknown): McpToolResponse => ({
   content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
+});
+
+/**
+ * Creates a success response for simple string values (no JSON encoding)
+ */
+export const createStringResponse = (text: string): McpToolResponse => ({
+  content: [{ type: 'text', text }],
 });
 
 /**
@@ -104,7 +110,8 @@ const executeHandler = async <TInput, TOutput>(
   bridge: EffectMcpBridge<GremlinService>,
   handler: ToolHandler<TInput, TOutput>,
   input: TInput,
-  operationName: string
+  operationName: string,
+  useStringResponse = false
 ): Promise<McpToolResponse> => {
   const result = await bridge.runEffect(
     pipe(
@@ -119,6 +126,11 @@ const executeHandler = async <TInput, TOutput>(
     return createErrorResponse(`${operationName}: ${errorResult.left.message}`);
   }
 
+  // Use string response for simple string results to avoid double JSON encoding
+  if (useStringResponse && typeof result.right === 'string') {
+    return createStringResponse(result.right);
+  }
+
   return createSuccessResponse(result.right);
 };
 
@@ -127,11 +139,18 @@ const executeHandler = async <TInput, TOutput>(
  */
 export const createSimpleToolHandler = <TOutput>(
   handler: (service: typeof GremlinService.Service) => Effect.Effect<TOutput, unknown>,
-  errorMessage: string
+  errorMessage: string,
+  useStringResponse = false
 ) => {
   return async (bridge: EffectMcpBridge<GremlinService>): Promise<McpToolResponse> => {
     try {
-      return await executeHandler(bridge, service => handler(service), null as never, errorMessage);
+      return await executeHandler(
+        bridge,
+        service => handler(service),
+        null as never,
+        errorMessage,
+        useStringResponse
+      );
     } catch (error) {
       return formatErrorResponse(error, errorMessage);
     }
@@ -161,14 +180,33 @@ export const createQueryResultHandler = (
   ): Promise<McpToolResponse> => {
     try {
       const { query } = z.object({ query: z.string() }).parse(args);
-      return await executeHandler(
-        bridge,
-        (service, _) => handler(service, query),
-        query,
-        'Query execution'
+
+      const result = await bridge.runEffect(
+        pipe(
+          GremlinService,
+          Effect.flatMap(service => handler(service, query)),
+          Effect.either
+        )
       );
+
+      if (result._tag === 'Left') {
+        // For query errors, return structured JSON with empty results and error message
+        const errorResult = result as { left: { message: string } };
+        const errorResponse = {
+          results: [],
+          message: `Query failed: ${errorResult.left.message}`,
+        };
+        return createSuccessResponse(errorResponse);
+      }
+
+      return createSuccessResponse(result.right);
     } catch (error) {
-      return formatErrorResponse(error, OPERATION_CONTEXTS.QUERY_EXECUTION);
+      // For parsing errors, return structured JSON response
+      const errorResponse = {
+        results: [],
+        message: `Query failed: ${error instanceof Error ? error.message : String(error)}`,
+      };
+      return createSuccessResponse(errorResponse);
     }
   };
 };

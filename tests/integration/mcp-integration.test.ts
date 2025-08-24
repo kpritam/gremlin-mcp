@@ -24,6 +24,7 @@ interface TestCallToolResult {
 
 describe('MCP Server Integration Tests', () => {
   let client: Client;
+  let transport: StdioClientTransport;
   let schemaCache: any = null; // Cache schema to avoid multiple expensive calls
 
   beforeAll(async () => {
@@ -41,7 +42,7 @@ describe('MCP Server Integration Tests', () => {
       }
     }
 
-    const transport = new StdioClientTransport({
+    transport = new StdioClientTransport({
       command: 'npx',
       args: ['tsx', 'src/server.ts'],
       env,
@@ -72,14 +73,26 @@ describe('MCP Server Integration Tests', () => {
   }, 600000);
 
   afterAll(async () => {
+    // Close client first
     if (client) {
       try {
-        // The close() method should handle shutting down the transport and child process.
         await client.close();
       } catch (error) {
         console.warn('Error closing client:', error);
       }
     }
+
+    // Then explicitly close transport to ensure child process is terminated
+    if (transport) {
+      try {
+        await transport.close();
+      } catch (error) {
+        console.warn('Error closing transport:', error);
+      }
+    }
+
+    // Give a small delay to ensure all handles are properly closed
+    await new Promise(resolve => setTimeout(resolve, 200));
   }, 10000);
 
   const itif = (condition: any) => (condition ? it : it.skip);

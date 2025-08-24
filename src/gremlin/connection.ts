@@ -43,6 +43,7 @@ export const createScopedConnection = (
       // Configure client with logging to stderr
       const clientConfig = {
         traversalSource: config.gremlin.traversalSource,
+        headers: {},
         ...authConfig,
         log: {
           level: config.logging?.level || 'info',
@@ -58,6 +59,7 @@ export const createScopedConnection = (
       // Configure remote connection with logging to stderr
       const connectionConfig = {
         traversalSource: config.gremlin.traversalSource,
+        headers: {},
         ...authConfig,
         log: {
           level: config.logging?.level || 'info',

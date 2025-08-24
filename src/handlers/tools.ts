@@ -56,10 +56,11 @@ export function registerEffectToolHandlers(
       description: 'Get the connection status of the Gremlin graph database',
       inputSchema: {},
     },
-    createSimpleToolHandler(service => service.getStatus, 'Connection status check failed').bind(
-      null,
-      bridge
-    )
+    createSimpleToolHandler(
+      service => service.getStatus,
+      'Connection status check failed',
+      true
+    ).bind(null, bridge)
   );
 
   // Get Graph Schema
@@ -88,7 +89,8 @@ export function registerEffectToolHandlers(
     createSimpleToolHandler(
       service =>
         Effect.map(service.refreshSchemaCache, () => 'Schema cache refreshed successfully.'),
-      'Failed to refresh schema'
+      'Failed to refresh schema',
+      true
     ).bind(null, bridge)
   );
 

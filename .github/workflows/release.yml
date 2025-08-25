@@ -76,6 +76,8 @@ jobs:
       with:
         node-version: latest
         cache: 'npm'
+        registry-url: 'https://registry.npmjs.org/'
+        scope: '@kpritam'
 
     - name: Install dependencies
       run: npm ci
@@ -107,6 +109,13 @@ jobs:
           # Publish stable versions to latest tag
           npm publish --provenance --access public
         fi
+      env:
+        NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+    - name: Debug npm configuration
+      run: |
+        npm config list
+        npm whoami
       env:
         NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 

@@ -338,19 +338,20 @@ GREMLIN_ENDPOINT="localhost:8182"
 GREMLIN_USE_SSL="true"              # Enable SSL/TLS
 GREMLIN_USERNAME="username"         # Authentication
 GREMLIN_PASSWORD="password"         # Authentication
-GREMLIN_IDLE_TIMEOUT="300"          # Connection timeout (seconds)
-LOG_LEVEL="info"                    # Logging level
+GREMLIN_IDLE_TIMEOUT="300"          # Connection timeout in seconds (default: 300)
+LOG_LEVEL="info"                    # Logging level: error, warn, info, debug
 ```
 
 ### Advanced Configuration
 
 ```bash
-# Schema and performance tuning (see Automatic Enum Discovery section for details)
-GREMLIN_ENUM_DISCOVERY_ENABLED="true"         # Enable smart enum detection
-GREMLIN_ENUM_CARDINALITY_THRESHOLD="10"       # Max distinct values for enum
-GREMLIN_ENUM_PROPERTY_BLACKLIST="id,timestamp" # Exclude specific properties
-GREMLIN_SCHEMA_INCLUDE_SAMPLE_VALUES="false"  # Reduce schema size
-GREMLIN_SCHEMA_MAX_ENUM_VALUES="10"           # Limit enum values shown
+# Schema and performance tuning
+GREMLIN_ENUM_DISCOVERY_ENABLED="true"         # Enable smart enum detection (default: true)
+GREMLIN_ENUM_CARDINALITY_THRESHOLD="10"       # Max distinct values for enum detection (default: 10)
+GREMLIN_ENUM_PROPERTY_BLACKLIST="id,timestamp" # Exclude specific properties from enum detection
+GREMLIN_SCHEMA_INCLUDE_SAMPLE_VALUES="false"  # Include sample values in schema (default: false)
+GREMLIN_SCHEMA_MAX_ENUM_VALUES="10"           # Limit enum values shown (default: 10)
+GREMLIN_SCHEMA_INCLUDE_COUNTS="true"          # Include vertex/edge counts in schema (default: true)
 ```
 
 ## 🔐 Security Considerations
@@ -430,19 +431,34 @@ GREMLIN_ENDPOINT=localhost:8182/g npm run test:it
 npm test && npm run test:it
 ```
 
+### Architecture
+
+- **Full Type Safety**: TypeScript + Effect functional programming patterns
+- **Effect-based Architecture**: Uses Effect.ts for composable, type-safe operations
+- **Service-Oriented Design**: Dependencies managed through Effect's Context.Tag patterns
+- **Layer-Based Composition**: Application built using Effect.Layer for dependency resolution
+- **Comprehensive Testing**: Unit + Integration tests with Effect testing patterns
+- **Error Handling**: Effect-based error management with custom error types
+
 ### Project Structure
 
 ```
 src/
-├── server.ts              # Main MCP server
-├── config.ts              # Environment configuration
+├── server.ts              # Effect-based MCP server with graceful startup/shutdown
+├── config.ts              # Effect.Config-based configuration validation
+├── constants.ts           # Application constants integrated with Effect configuration
 ├── gremlin/
-│   ├── client.ts          # Gremlin database client
-│   └── models.ts          # TypeScript types and schemas
-├── handlers/
-│   ├── tools.ts           # MCP tool implementations
-│   └── resources.ts       # MCP resource handlers
-└── utils/                 # Utility functions
+│   ├── service.ts         # GremlinService using Effect.Context.Tag pattern
+│   ├── schema-service.ts  # SchemaService with Effect dependency injection
+│   └── types.ts           # TypeScript types and schemas
+├── handlers/              # Effect-based MCP request handlers
+│   ├── tools.ts           # Effect-based tool handlers
+│   ├── resources.ts       # Effect-based resource handlers
+│   └── effect-runtime-bridge.ts # ManagedRuntime container for Effect execution
+└── utils/                 # Effect-based utility modules
+    ├── data-operations.ts # Effect-based graph data import/export operations
+    ├── result-parser.ts   # Gremlin result parsing with metadata extraction
+    └── type-guards.ts     # Runtime type checking functions
 ```
 
 ### Available Scripts
@@ -455,14 +471,6 @@ src/
 | `npm run lint`     | Code linting with ESLint                        |
 | `npm run format`   | Code formatting with Prettier                   |
 | `npm run validate` | Run all checks (format, lint, type-check, test) |
-
-### Architecture
-
-- **Full Type Safety**: TypeScript + Zod runtime validation
-- **MCP SDK**: Official Model Context Protocol implementation
-- **Modular Design**: Separated concerns for tools, resources, and utilities
-- **Comprehensive Testing**: Unit + Integration
-- **Error Handling**: Detailed error messages and graceful degradation
 
 ### Smart Schema Discovery
 

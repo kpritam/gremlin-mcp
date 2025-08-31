@@ -33,7 +33,7 @@ describe('Effect-based Configuration Management', () => {
       process.env.GREMLIN_SCHEMA_MAX_ENUM_VALUES = '10';
       process.env.GREMLIN_SCHEMA_INCLUDE_COUNTS = 'true';
 
-      const result = Effect.runSync(AppConfig);
+      const result = await Effect.runPromise(AppConfig);
 
       expect(result).toMatchObject({
         gremlin: {
@@ -59,12 +59,14 @@ describe('Effect-based Configuration Management', () => {
           version: '0.0.11-SNAPSHOT',
         },
       });
+      expect(result.gremlin.username).toBeDefined();
+      expect(result.gremlin.password).toBeDefined();
     });
 
     it('should handle minimal configuration with defaults', async () => {
       process.env.GREMLIN_ENDPOINT = 'localhost:8182';
 
-      const result = Effect.runSync(AppConfig);
+      const result = await Effect.runPromise(AppConfig);
 
       expect(result).toMatchObject({
         gremlin: {
@@ -87,20 +89,20 @@ describe('Effect-based Configuration Management', () => {
       });
     });
 
-    it('should fail when required GREMLIN_ENDPOINT is missing', () => {
+    it('should fail when required GREMLIN_ENDPOINT is missing', async () => {
       delete process.env.GREMLIN_ENDPOINT;
 
-      expect(() => Effect.runSync(AppConfig)).toThrow();
+      await expect(Effect.runPromise(AppConfig)).rejects.toThrow();
     });
 
     it('should parse boolean values correctly', async () => {
       process.env.GREMLIN_ENDPOINT = 'localhost:8182';
       process.env.GREMLIN_USE_SSL = 'true';
-      process.env.GREMLIN_ENUM_DISCOVERY_ENABLED = '1';
-      process.env.GREMLIN_SCHEMA_INCLUDE_SAMPLE_VALUES = 't';
+      process.env.GREMLIN_ENUM_DISCOVERY_ENABLED = 'true';
+      process.env.GREMLIN_SCHEMA_INCLUDE_SAMPLE_VALUES = 'true';
       process.env.GREMLIN_SCHEMA_INCLUDE_COUNTS = 'false';
 
-      const result = Effect.runSync(AppConfig);
+      const result = await Effect.runPromise(AppConfig);
 
       expect(result.gremlin.useSSL).toBe(true);
       expect(result.schema.enumDiscoveryEnabled).toBe(true);
@@ -111,7 +113,7 @@ describe('Effect-based Configuration Management', () => {
     it('should parse endpoint with traversal source', async () => {
       process.env.GREMLIN_ENDPOINT = 'localhost:8182/custom';
 
-      const result = Effect.runSync(AppConfig);
+      const result = await Effect.runPromise(AppConfig);
 
       expect(result.gremlin.host).toBe('localhost');
       expect(result.gremlin.port).toBe(8182);
@@ -122,7 +124,7 @@ describe('Effect-based Configuration Management', () => {
       process.env.GREMLIN_ENDPOINT = 'localhost:8182';
       process.env.GREMLIN_ENUM_PROPERTY_BLACKLIST = 'id, pk, name, description';
 
-      const result = Effect.runSync(AppConfig);
+      const result = await Effect.runPromise(AppConfig);
 
       expect(result.schema.enumPropertyBlacklist).toEqual(['id', 'pk', 'name', 'description']);
     });
@@ -131,16 +133,16 @@ describe('Effect-based Configuration Management', () => {
       process.env.GREMLIN_ENDPOINT = 'localhost:8182';
       process.env.LOG_LEVEL = 'debug';
 
-      const result = Effect.runSync(AppConfig);
+      const result = await Effect.runPromise(AppConfig);
 
       expect(result.logging.level).toBe('debug');
     });
 
-    it('should fail with invalid log level', () => {
+    it('should fail with invalid log level', async () => {
       process.env.GREMLIN_ENDPOINT = 'localhost:8182';
       process.env.LOG_LEVEL = 'invalid';
 
-      expect(() => Effect.runSync(AppConfig)).toThrow();
+      await expect(Effect.runPromise(AppConfig)).rejects.toThrow();
     });
 
     it('should parse numeric values correctly', async () => {
@@ -149,7 +151,7 @@ describe('Effect-based Configuration Management', () => {
       process.env.GREMLIN_ENUM_CARDINALITY_THRESHOLD = '20';
       process.env.GREMLIN_SCHEMA_MAX_ENUM_VALUES = '15';
 
-      const result = Effect.runSync(AppConfig);
+      const result = await Effect.runPromise(AppConfig);
 
       expect(result.gremlin.idleTimeout).toBe(600);
       expect(result.schema.enumCardinalityThreshold).toBe(20);
@@ -161,7 +163,7 @@ describe('Effect-based Configuration Management', () => {
       process.env.GREMLIN_USERNAME = 'testuser';
       process.env.GREMLIN_PASSWORD = 'testpass';
 
-      const result = Effect.runSync(AppConfig);
+      const result = await Effect.runPromise(AppConfig);
 
       expect(result.gremlin.username).toBeDefined();
       expect(result.gremlin.password).toBeDefined();
@@ -172,7 +174,7 @@ describe('Effect-based Configuration Management', () => {
       delete process.env.GREMLIN_USERNAME;
       delete process.env.GREMLIN_PASSWORD;
 
-      const result = Effect.runSync(AppConfig);
+      const result = await Effect.runPromise(AppConfig);
 
       expect(result.gremlin.username).toBeDefined(); // Should be Option.none()
       expect(result.gremlin.password).toBeDefined(); // Should be Option.none()
@@ -180,28 +182,28 @@ describe('Effect-based Configuration Management', () => {
   });
 
   describe('Error Handling', () => {
-    it('should provide meaningful error for invalid endpoint format', () => {
+    it('should provide meaningful error for invalid endpoint format', async () => {
       process.env.GREMLIN_ENDPOINT = 'invalid-endpoint';
 
-      expect(() => Effect.runSync(AppConfig)).toThrow(/Invalid host:port format/);
+      await expect(Effect.runPromise(AppConfig)).rejects.toThrow(/Invalid host:port format/);
     });
 
-    it('should provide meaningful error for invalid port', () => {
+    it('should provide meaningful error for invalid port', async () => {
       process.env.GREMLIN_ENDPOINT = 'localhost:invalid';
 
-      expect(() => Effect.runSync(AppConfig)).toThrow(/Port must be a positive integer/);
+      await expect(Effect.runPromise(AppConfig)).rejects.toThrow(/Port must be a positive integer/);
     });
 
-    it('should provide meaningful error for empty endpoint', () => {
+    it('should provide meaningful error for empty endpoint', async () => {
       process.env.GREMLIN_ENDPOINT = '';
 
-      expect(() => Effect.runSync(AppConfig)).toThrow();
+      await expect(Effect.runPromise(AppConfig)).rejects.toThrow();
     });
 
-    it('should handle missing host or port', () => {
+    it('should handle missing host or port', async () => {
       process.env.GREMLIN_ENDPOINT = ':8182';
 
-      expect(() => Effect.runSync(AppConfig)).toThrow(/Host and port are required/);
+      await expect(Effect.runPromise(AppConfig)).rejects.toThrow(/Host and port are required/);
     });
   });
 
@@ -209,7 +211,7 @@ describe('Effect-based Configuration Management', () => {
     it('should validate all required configuration fields are present', async () => {
       process.env.GREMLIN_ENDPOINT = 'localhost:8182/g';
 
-      const result = Effect.runSync(AppConfig);
+      const result = await Effect.runPromise(AppConfig);
 
       // Check all required fields are present
       expect(result.gremlin.host).toBeDefined();
@@ -231,7 +233,7 @@ describe('Effect-based Configuration Management', () => {
     it('should have correct default values', async () => {
       process.env.GREMLIN_ENDPOINT = 'localhost:8182';
 
-      const result = Effect.runSync(AppConfig);
+      const result = await Effect.runPromise(AppConfig);
 
       expect(result.gremlin.traversalSource).toBe('g');
       expect(result.gremlin.useSSL).toBe(false);

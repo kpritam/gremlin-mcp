@@ -7,8 +7,10 @@
  */
 
 import { z } from 'zod';
-import { type GremlinResultItem, GremlinResultItemSchema } from '../gremlin/models.js';
-import { calculateResultMetadata, type ResultMetadata } from './result-metadata.js';
+import { GremlinResultItemSchema } from '../gremlin/models.js';
+import { calculateResultMetadata } from './result-metadata.js';
+import { Effect } from 'effect';
+import { Errors } from '../errors.js';
 
 /**
  * Type guard for objects with specific constructor names.
@@ -175,16 +177,17 @@ const GremlinPreprocessedResultSchema = z.preprocess((arg: unknown) => {
  *
  * Uses the preprocessing schema to handle driver-specific transformations.
  */
-export function parseGremlinResultItem(rawResult: unknown): GremlinResultItem {
-  return GremlinPreprocessedResultSchema.parse(rawResult);
-}
+export const parseGremlinResultItem = (rawResult: unknown) =>
+  Effect.try({
+    try: () => GremlinPreprocessedResultSchema.parse(rawResult),
+    catch: error => Errors.parse('Failed to parse Gremlin result item', rawResult, error),
+  });
 
 /**
  * Parses an array of raw Gremlin results into typed objects.
  */
-export function parseGremlinResults(rawResults: unknown[]): GremlinResultItem[] {
-  return rawResults.map(parseGremlinResultItem);
-}
+export const parseGremlinResults = (rawResults: unknown[]) =>
+  Effect.all(rawResults.map(parseGremlinResultItem));
 
 /**
  * Enhanced result parser with comprehensive metadata generation.
@@ -195,12 +198,9 @@ export function parseGremlinResults(rawResults: unknown[]): GremlinResultItem[] 
  * Provides additional context about result composition, useful for
  * understanding query output patterns and debugging.
  */
-export function parseGremlinResultsWithMetadata(rawResults: unknown[]): {
-  results: GremlinResultItem[];
-  metadata: ResultMetadata;
-} {
-  const results = parseGremlinResults(rawResults);
-  const metadata = calculateResultMetadata(results);
-
-  return { results, metadata };
-}
+export const parseGremlinResultsWithMetadata = (rawResults: unknown[]) =>
+  Effect.gen(function* () {
+    const results = yield* parseGremlinResults(rawResults);
+    const metadata = calculateResultMetadata(results);
+    return { results, metadata };
+  });

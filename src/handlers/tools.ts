@@ -6,7 +6,7 @@
  * Uses Effect-based dependency injection for service access.
  */
 
-import { Effect, Runtime } from 'effect';
+import { Effect, Runtime, pipe } from 'effect';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { TOOL_NAMES } from '../constants.js';
@@ -67,12 +67,16 @@ export function registerEffectToolHandlers(
       inputSchema: {},
     },
     () =>
-      createStringToolEffect(
-        runtime,
-        Effect.andThen(GremlinService, service =>
-          Effect.map(service.getStatus, statusObj => statusObj.status)
-        ),
-        'Connection status check failed'
+      Effect.runPromise(
+        pipe(
+          createStringToolEffect(
+            Effect.andThen(GremlinService, service =>
+              Effect.map(service.getStatus, statusObj => statusObj.status)
+            ),
+            'Connection status check failed'
+          ),
+          Effect.provide(runtime)
+        )
       )
   );
 
@@ -86,10 +90,14 @@ export function registerEffectToolHandlers(
       inputSchema: {},
     },
     () =>
-      createToolEffect(
-        runtime,
-        Effect.andThen(GremlinService, service => service.getSchema),
-        'Schema retrieval failed'
+      Effect.runPromise(
+        pipe(
+          createToolEffect(
+            Effect.andThen(GremlinService, service => service.getSchema),
+            'Schema retrieval failed'
+          ),
+          Effect.provide(runtime)
+        )
       )
   );
 
@@ -102,12 +110,16 @@ export function registerEffectToolHandlers(
       inputSchema: {},
     },
     () =>
-      createStringToolEffect(
-        runtime,
-        Effect.andThen(GremlinService, service =>
-          Effect.map(service.refreshSchemaCache, () => 'Schema cache refreshed successfully.')
-        ),
-        'Failed to refresh schema'
+      Effect.runPromise(
+        pipe(
+          createStringToolEffect(
+            Effect.andThen(GremlinService, service =>
+              Effect.map(service.refreshSchemaCache, () => 'Schema cache refreshed successfully.')
+            ),
+            'Failed to refresh schema'
+          ),
+          Effect.provide(runtime)
+        )
       )
   );
 
@@ -123,7 +135,7 @@ export function registerEffectToolHandlers(
     },
     (args: unknown) => {
       const { query } = z.object({ query: z.string() }).parse(args);
-      return createQueryEffect(runtime, query);
+      return Effect.runPromise(pipe(createQueryEffect(query), Effect.provide(runtime)));
     }
   );
 
@@ -152,12 +164,17 @@ export function registerEffectToolHandlers(
           .describe('Import options'),
       },
     },
-    createValidatedToolEffect(
-      runtime,
-      importInputSchema,
-      input => Effect.andThen(GremlinService, service => importGraphData(service, input)),
-      'Import Graph Data'
-    )
+    (args: unknown) =>
+      Effect.runPromise(
+        pipe(
+          createValidatedToolEffect(
+            importInputSchema,
+            input => Effect.andThen(GremlinService, service => importGraphData(service, input)),
+            'Import Graph Data'
+          )(args),
+          Effect.provide(runtime)
+        )
+      )
   );
 
   // Export Subgraph
@@ -182,11 +199,16 @@ export function registerEffectToolHandlers(
           .describe('Properties to exclude from the export'),
       },
     },
-    createValidatedToolEffect(
-      runtime,
-      exportInputSchema,
-      input => Effect.andThen(GremlinService, service => exportSubgraph(service, input)),
-      'Export Subgraph'
-    )
+    (args: unknown) =>
+      Effect.runPromise(
+        pipe(
+          createValidatedToolEffect(
+            exportInputSchema,
+            input => Effect.andThen(GremlinService, service => exportSubgraph(service, input)),
+            'Export Subgraph'
+          )(args),
+          Effect.provide(runtime)
+        )
+      )
   );
 }

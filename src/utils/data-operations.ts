@@ -9,7 +9,13 @@
 import { Effect } from 'effect';
 import { type ImportDataInput, type ExportSubgraphInput } from '../gremlin/models.js';
 import { GremlinService } from '../gremlin/service.js';
-import { Errors, ResourceError, GremlinConnectionError, GremlinQueryError } from '../errors.js';
+import {
+  Errors,
+  ResourceError,
+  GremlinConnectionError,
+  GremlinQueryError,
+  ParseError,
+} from '../errors.js';
 
 /**
  * Type guard to check if a value is a record object
@@ -34,7 +40,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export const importGraphData = (
   service: typeof GremlinService.Service,
   input: ImportDataInput
-): Effect.Effect<string, ResourceError | GremlinConnectionError | GremlinQueryError> =>
+): Effect.Effect<string, ResourceError | GremlinConnectionError | GremlinQueryError | ParseError> =>
   Effect.gen(function* () {
     yield* Effect.logInfo(
       `Starting import operation: format=${input.format}, size=${input.data.length} chars`
@@ -71,7 +77,7 @@ export const importGraphData = (
 export const exportSubgraph = (
   service: typeof GremlinService.Service,
   input: ExportSubgraphInput
-): Effect.Effect<string, ResourceError | GremlinConnectionError | GremlinQueryError> =>
+): Effect.Effect<string, ResourceError | GremlinConnectionError | GremlinQueryError | ParseError> =>
   Effect.gen(function* () {
     yield* Effect.logInfo(
       `Starting export operation: format=${input.format}, query=${input.traversal_query}`
@@ -103,7 +109,7 @@ export const exportSubgraph = (
 const clearGraphIfRequested = (
   service: typeof GremlinService.Service,
   shouldClear: boolean | undefined
-): Effect.Effect<void, GremlinConnectionError | GremlinQueryError> =>
+): Effect.Effect<void, GremlinConnectionError | GremlinQueryError | ParseError> =>
   shouldClear
     ? Effect.gen(function* () {
         yield* service.executeQuery('g.V().drop()');
@@ -118,7 +124,7 @@ const clearGraphIfRequested = (
 const importVertices = (
   service: typeof GremlinService.Service,
   vertices: unknown[]
-): Effect.Effect<void, GremlinConnectionError | GremlinQueryError> =>
+): Effect.Effect<void, GremlinConnectionError | GremlinQueryError | ParseError> =>
   Effect.gen(function* () {
     for (const vertex of vertices) {
       const query = buildVertexInsertQuery(vertex as Record<string, unknown>);
@@ -133,7 +139,7 @@ const importVertices = (
 const importEdges = (
   service: typeof GremlinService.Service,
   edges: unknown[]
-): Effect.Effect<void, GremlinConnectionError | GremlinQueryError> =>
+): Effect.Effect<void, GremlinConnectionError | GremlinQueryError | ParseError> =>
   Effect.gen(function* () {
     for (const edge of edges) {
       const query = buildEdgeInsertQuery(edge as Record<string, unknown>);
@@ -165,7 +171,7 @@ const parseGraphSONData = (
 const importGraphSON = (
   service: typeof GremlinService.Service,
   input: ImportDataInput
-): Effect.Effect<string, ResourceError | GremlinConnectionError | GremlinQueryError> =>
+): Effect.Effect<string, ResourceError | GremlinConnectionError | GremlinQueryError | ParseError> =>
   Effect.gen(function* () {
     const data = yield* parseGraphSONData(input.data);
 
@@ -207,7 +213,7 @@ const parseCSVData = (
 const importCSV = (
   service: typeof GremlinService.Service,
   input: ImportDataInput
-): Effect.Effect<string, ResourceError | GremlinConnectionError | GremlinQueryError> =>
+): Effect.Effect<string, ResourceError | GremlinConnectionError | GremlinQueryError | ParseError> =>
   Effect.gen(function* () {
     const { headers, dataRows } = yield* parseCSVData(input.data);
 
@@ -237,7 +243,7 @@ const importCSVVertices = (
   service: typeof GremlinService.Service,
   dataRows: string[],
   headers: string[]
-): Effect.Effect<void, GremlinConnectionError | GremlinQueryError> =>
+): Effect.Effect<void, GremlinConnectionError | GremlinQueryError | ParseError> =>
   Effect.gen(function* () {
     for (const row of dataRows) {
       const properties = processCSVRow(row, headers);

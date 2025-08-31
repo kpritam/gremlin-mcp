@@ -5,8 +5,10 @@
 import type { driver, process } from 'gremlin';
 import type { GraphSchema } from './models.js';
 
-// Gremlin type aliases
+export type { GraphSchema };
+
 export type GremlinClientType = driver.Client;
+export type GremlinResultSet = driver.ResultSet;
 export type GremlinConnection = driver.DriverRemoteConnection;
 export type GraphTraversalSource = process.GraphTraversalSource;
 

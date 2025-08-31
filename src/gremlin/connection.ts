@@ -1,35 +1,44 @@
 /**
- * Enhanced Gremlin connection management with Effect.ts resource patterns.
- * Uses Effect.acquireUseRelease and Scope for proper resource lifecycle management.
+ * @fileoverview Provides a live implementation of the GremlinClient service.
+ *
+ * This module defines the `GremlinClientLive` layer, which is responsible for
+ * creating and managing the lifecycle of a Gremlin database connection.
+ * The layer uses `Effect.Layer` to provide the `GremlinClient` service
+ * to the application's context, ensuring that the connection is acquired
+ * when the layer is built and released when the application shuts down.
  */
 
-import { Effect, Ref, Option, Scope, Redacted } from 'effect';
+import { Effect, Layer, Option, Redacted } from 'effect';
 import gremlin from 'gremlin';
-import { GremlinConnectionError, Errors } from '../errors.js';
-import type { AppConfigType } from '../config.js';
+import { AppConfig } from '../config.js';
+import { Errors } from '../errors.js';
+import { GremlinClient } from './client.js';
 import type { ConnectionState } from './types.js';
 
 const { Client, DriverRemoteConnection } = gremlin.driver;
+const { AnonymousTraversalSource } = gremlin.process;
 
 /**
- * Configuration object for Gremlin connections
+ * Creates and tests a Gremlin connection.
+ *
+ * This effect is responsible for establishing a connection to the Gremlin
+ * server, creating a client and a graph traversal source (`g`), and then
+ * testing the connection to ensure it is functional before it is used.
+ *
+ * @param config The application configuration containing Gremlin connection details.
+ * @returns An `Effect` that resolves to a `ConnectionState` object or fails with a `GremlinConnectionError`.
  */
-interface GremlinConnectionConfig {
-  readonly url: string;
-  readonly traversalSource: string;
-  readonly auth?: {
-    readonly username: string;
-    readonly password: string;
-  };
-  readonly logLevel: string;
-}
-
-/**
- * Creates a standardized connection configuration from app config
- */
-const createConnectionConfig = (config: AppConfigType): GremlinConnectionConfig => {
+const makeConnection = Effect.gen(function* () {
+  const config = yield* AppConfig;
   const protocol = config.gremlin.useSSL ? 'wss' : 'ws';
   const url = `${protocol}://${config.gremlin.host}:${config.gremlin.port}/gremlin`;
+  const traversalSource = config.gremlin.traversalSource;
+
+  yield* Effect.logInfo('Acquiring Gremlin connection', {
+    host: config.gremlin.host,
+    port: config.gremlin.port,
+    ssl: config.gremlin.useSSL,
+  });
 
   const auth = Option.zipWith(
     config.gremlin.username,
@@ -37,285 +46,85 @@ const createConnectionConfig = (config: AppConfigType): GremlinConnectionConfig 
     (username, password) => ({ username, password: Redacted.value(password) })
   );
 
-  return {
-    url,
-    traversalSource: config.gremlin.traversalSource,
-    auth: Option.getOrUndefined(auth),
-    logLevel: config.logging?.level || 'info',
-  };
-};
-
-/**
- * Creates client configuration with logging
- */
-const createClientConfig = (connectionConfig: GremlinConnectionConfig) => ({
-  traversalSource: connectionConfig.traversalSource,
-  headers: {},
-  ...(connectionConfig.auth ? { auth: connectionConfig.auth } : {}),
-  log: {
-    level: connectionConfig.logLevel,
-    stream: process.stderr,
-  },
-});
-
-/**
- * Creates remote connection configuration with logging
- */
-const createRemoteConnectionConfig = (connectionConfig: GremlinConnectionConfig) => ({
-  traversalSource: connectionConfig.traversalSource,
-  headers: {},
-  ...(connectionConfig.auth ? { auth: connectionConfig.auth } : {}),
-  log: {
-    level: connectionConfig.logLevel,
-    stream: process.stderr,
-  },
-});
-
-/**
- * Tests a Gremlin connection to ensure it's working
- */
-const testConnection = (g: gremlin.process.GraphTraversalSource) =>
-  Effect.tryPromise({
-    try: () => g.V().limit(1).count().next(),
-    catch: (error: unknown) =>
-      Errors.connection('Connection test failed', {
-        error,
-        operation: 'connection_test',
+  const connection = yield* Effect.try({
+    try: () =>
+      new DriverRemoteConnection(url, {
+        traversalSource,
+        auth: Option.getOrUndefined(auth),
+        headers: {},
+        log: {
+          level: config.logging.level,
+          stream: process.stderr,
+        },
       }),
+    catch: error => Errors.connection('Failed to create remote connection', { error }),
   });
 
-/**
- * Safely closes a connection with proper error handling
- */
-const safeCloseConnection = (
-  connection: gremlin.driver.DriverRemoteConnection | undefined,
-  context: string = 'cleanup'
-) =>
-  Effect.gen(function* () {
-    if (!connection) {
-      yield* Effect.logDebug(`No connection to close during ${context}`);
-      return;
-    }
+  const g = AnonymousTraversalSource.traversal().withRemote(connection);
+  const client = new Client(url, {
+    traversalSource,
+    auth: Option.getOrUndefined(auth),
+    headers: {},
+    log: {
+      level: config.logging.level,
+      stream: process.stderr,
+    },
+  });
 
+  // Test the connection
+  yield* Effect.tryPromise({
+    try: () => g.V().limit(1).count().next(),
+    catch: error => Errors.connection('Connection test failed', { error }),
+  });
+
+  yield* Effect.logInfo('✅ Gremlin connection acquired successfully');
+
+  return {
+    client,
+    connection,
+    g,
+    lastUsed: Date.now(),
+  };
+});
+
+/**
+ * Safely closes a Gremlin connection.
+ *
+ * This effect takes a `ConnectionState` and closes the underlying connection,
+ * logging any errors that occur during the process.
+ *
+ * @param state The `ConnectionState` to be closed.
+ * @returns An `Effect` that completes when the connection is closed.
+ */
+const releaseConnection = (state: ConnectionState) =>
+  Effect.gen(function* () {
+    yield* Effect.logInfo('Releasing Gremlin connection');
     yield* Effect.tryPromise({
-      try: () => connection.close(),
-      catch: error =>
-        Errors.connection(`Failed to close Gremlin connection during ${context}`, {
-          error,
-          context,
-        }),
-    }).pipe(
-      Effect.catchAll(error => Effect.logWarning(`Error during ${context}: ${error.message}`))
-    );
-
-    yield* Effect.logDebug(`Connection closed successfully during ${context}`);
+      try: () => state.connection.close(),
+      catch: error => Errors.connection('Failed to close Gremlin connection', { error }),
+    }).pipe(Effect.catchAll(error => Effect.logWarning(`Error during release: ${error.message}`)));
+    yield* Effect.logInfo('Gremlin connection released successfully');
   });
 
 /**
- * Create Gremlin connection as a scoped resource with automatic cleanup
+ * A layer that provides a live `GremlinClient` service.
+ *
+ * This layer is responsible for the lifecycle of the Gremlin connection.
+ * It acquires a connection when the layer is initialized and releases it
+ * when the application scope is closed.
+ *
+ * @example
+ * ```typescript
+ * import { Effect } from 'effect';
+ * import { GremlinClientLive } from './connection.js';
+ *
+ * const myApp = Effect.provide(
+ *   // my effects...
+ *   GremlinClientLive
+ * );
+ * ```
  */
-export const createScopedConnection = (
-  config: AppConfigType
-): Effect.Effect<ConnectionState, GremlinConnectionError, Scope.Scope> =>
-  Effect.acquireUseRelease(
-    // Acquire: Create the connection
-    Effect.gen(function* () {
-      yield* Effect.logInfo('Acquiring Gremlin connection', {
-        host: config.gremlin.host,
-        port: config.gremlin.port,
-        ssl: config.gremlin.useSSL,
-      });
-
-      const connectionConfig = createConnectionConfig(config);
-
-      // Create client with standardized config
-      const client = yield* Effect.try({
-        try: () => new Client(connectionConfig.url, createClientConfig(connectionConfig)),
-        catch: error =>
-          Errors.connection('Failed to create Gremlin client', {
-            error,
-            host: config.gremlin.host,
-            port: config.gremlin.port,
-          }),
-      });
-
-      // Create remote connection with standardized config
-      const connection = yield* Effect.try({
-        try: () =>
-          new DriverRemoteConnection(
-            connectionConfig.url,
-            createRemoteConnectionConfig(connectionConfig)
-          ),
-        catch: error =>
-          Errors.connection('Failed to create remote connection', {
-            error,
-            host: config.gremlin.host,
-            port: config.gremlin.port,
-          }),
-      });
-
-      const g = yield* Effect.try({
-        try: () => gremlin.process.AnonymousTraversalSource.traversal().withRemote(connection),
-        catch: error =>
-          Errors.connection('Failed to create graph traversal source', {
-            error,
-            host: config.gremlin.host,
-            port: config.gremlin.port,
-          }),
-      });
-
-      // Test the connection
-      yield* testConnection(g);
-
-      const state: ConnectionState = {
-        client,
-        connection,
-        g,
-        lastUsed: Date.now(),
-      };
-
-      yield* Effect.logInfo('✅ Gremlin connection acquired successfully');
-      return state;
-    }),
-
-    // Use: Return the connection state
-    state => Effect.succeed(state),
-
-    // Release: Clean up the connection
-    state =>
-      Effect.gen(function* () {
-        yield* Effect.logInfo('Releasing Gremlin connection');
-        yield* safeCloseConnection(state.connection, 'release');
-        yield* Effect.logInfo('Gremlin connection released successfully');
-      })
-  );
-
-/**
- * Create connection with automatic resource management
- */
-export const createConnection = (
-  config: AppConfigType
-): Effect.Effect<ConnectionState, GremlinConnectionError> =>
-  Effect.scoped(createScopedConnection(config));
-
-/**
- * Connection pool manager with scoped resource management
- */
-export const createConnectionPool = (): Effect.Effect<
-  Ref.Ref<Option.Option<ConnectionState>>,
-  never,
-  Scope.Scope
-> =>
-  Effect.gen(function* () {
-    const connectionRef = yield* Ref.make<Option.Option<ConnectionState>>(Option.none());
-
-    // Add cleanup finalizer to the scope
-    yield* Effect.addFinalizer(() =>
-      Effect.gen(function* () {
-        yield* Effect.logInfo('Cleaning up connection pool');
-        const optionalState = yield* Ref.get(connectionRef);
-
-        yield* Option.match(optionalState, {
-          onNone: () => Effect.logDebug('No connection to close in pool cleanup'),
-          onSome: state => safeCloseConnection(state.connection, 'pool cleanup'),
-        });
-
-        yield* Ref.set(connectionRef, Option.none());
-        yield* Effect.logInfo('Connection pool cleaned up successfully');
-      })
-    );
-
-    return connectionRef;
-  });
-
-/**
- * Close connections immediately (for manual cleanup when needed)
- */
-const closeConnections = (connectionRef: Ref.Ref<Option.Option<ConnectionState>>) =>
-  Effect.gen(function* () {
-    const optionalState = yield* Ref.get(connectionRef);
-
-    yield* Option.match(optionalState, {
-      onNone: () => Effect.logDebug('No connection to close'),
-      onSome: state => safeCloseConnection(state.connection, 'manual cleanup'),
-    });
-
-    // Clear connection state
-    yield* Ref.set(connectionRef, Option.none());
-    yield* Effect.logInfo('Gremlin connections closed');
-  });
-
-/**
- * Checks if a connection is idle based on the configured timeout
- */
-const isConnectionIdle = (
-  connectionState: ConnectionState,
-  config: AppConfigType,
-  currentTimestamp: number
-): boolean => {
-  const idleTimeMs = currentTimestamp - connectionState.lastUsed;
-  const idleTimeoutMs = config.gremlin.idleTimeout * 1000;
-  return idleTimeMs >= idleTimeoutMs;
-};
-
-/**
- * Updates the last used timestamp for a connection
- */
-const updateLastUsed = (
-  connectionRef: Ref.Ref<Option.Option<ConnectionState>>,
-  connectionState: ConnectionState,
-  timestamp: number
-) => Ref.set(connectionRef, Option.some({ ...connectionState, lastUsed: timestamp }));
-
-/**
- * Ensure connection is active and not idle with enhanced resource management
- */
-export const ensureConnection = (
-  connectionRef: Ref.Ref<Option.Option<ConnectionState>>,
-  config: AppConfigType
-) =>
-  Effect.gen(function* () {
-    const optionalConnectionState = yield* Ref.get(connectionRef);
-    const currentTimestamp = Date.now();
-
-    return yield* Option.match(optionalConnectionState, {
-      onNone: () =>
-        Effect.gen(function* () {
-          // No connection, create new
-          const newConnectionState = yield* createConnection(config);
-          yield* Ref.set(connectionRef, Option.some(newConnectionState));
-          return newConnectionState;
-        }),
-      onSome: connectionState =>
-        Effect.gen(function* () {
-          if (!isConnectionIdle(connectionState, config, currentTimestamp)) {
-            // Update last used time atomically
-            yield* updateLastUsed(connectionRef, connectionState, currentTimestamp);
-            return connectionState;
-          }
-
-          // Connection is idle, close it gracefully
-          const idleTimeMs = currentTimestamp - connectionState.lastUsed;
-          yield* Effect.logInfo(
-            `Connection idle for ${Math.round(idleTimeMs / 1000)}s, refreshing`
-          );
-          yield* closeConnections(connectionRef);
-
-          // Create new connection after closing
-          const newConnectionState = yield* createConnection(config);
-          yield* Ref.set(connectionRef, Option.some(newConnectionState));
-          return newConnectionState;
-        }),
-    });
-  });
-
-/**
- * Get connection status with proper Effect error handling.
- * Returns the actual connection state on success, or fails with typed error.
- * This is more idiomatic than using success type for both cases.
- */
-export const getConnectionStatus = (
-  connectionRef: Ref.Ref<Option.Option<ConnectionState>>,
-  config: AppConfigType
-): Effect.Effect<ConnectionState, GremlinConnectionError> =>
-  ensureConnection(connectionRef, config);
+export const GremlinClientLive = Layer.scoped(
+  GremlinClient,
+  Effect.acquireRelease(makeConnection, releaseConnection)
+);

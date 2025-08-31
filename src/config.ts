@@ -1,5 +1,7 @@
 /**
- * @fileoverview Application configuration with type-safe environment variable loading.
+ * Gremlin MCP Server
+ *
+ * Type-safe Application configuration with type-safe environment variable loading.
  *
  * Provides comprehensive configuration management for the Gremlin MCP server using
  * Effect.Config for validation and error handling. All configuration is loaded from
@@ -14,76 +16,8 @@
  * ```
  */
 
-import { Config, ConfigError, Data, Effect, Either, pipe } from 'effect';
+import { Config, ConfigError, Effect, Either, pipe } from 'effect';
 import { DEFAULTS } from './constants.js';
-
-/**
- * Configuration Error ADTs
- *
- * Custom error types for structured config parsing and validation failures.
- * Used for fine-grained error reporting in config.ts.
- */
-
-/**
- * Error thrown when a config field fails to parse.
- * @property field - Name of the config field
- * @property value - Raw value received
- * @property reason - Description of the parse failure
- */
-export class ConfigParseError extends Data.TaggedError('ConfigParseError')<{
-  readonly field: string;
-  readonly value: string;
-  readonly reason: string;
-}> {}
-
-/**
- * Error thrown when a Gremlin endpoint string fails to parse.
- * @property endpoint - Raw endpoint string
- * @property reason - Description of the parse failure
- */
-export class EndpointParseError extends Data.TaggedError('EndpointParseError')<{
-  readonly endpoint: string;
-  readonly reason: string;
-}> {}
-
-/**
- * Error thrown when a config value fails a validation constraint.
- * @property field - Name of the config field
- * @property value - Value that failed validation
- * @property constraint - Description of the failed constraint
- */
-export class ValidationError extends Data.TaggedError('ValidationError')<{
-  readonly field: string;
-  readonly value: unknown;
-  readonly constraint: string;
-}> {}
-
-/**
- * Parses a string into a boolean value with comprehensive format support.
- * Accepts: 'true', 'false', '1', '0', 't', 'f', 'yes', 'no', 'y', 'n' (case insensitive)
- * Returns Either.right(boolean) on success, Either.left(ConfigError) on failure.
- * @param value - Raw string value to parse
- */
-const parseBooleanValue = (value: string): Either.Either<boolean, ConfigError.ConfigError> => {
-  const normalized = value.toLowerCase().trim();
-  const truthyValues = ['true', '1', 't', 'yes', 'y'];
-  const falsyValues = ['false', '0', 'f', 'no', 'n'];
-
-  if (truthyValues.includes(normalized)) {
-    return Either.right(true);
-  }
-
-  if (falsyValues.includes(normalized)) {
-    return Either.right(false);
-  }
-
-  return Either.left(
-    ConfigError.InvalidData(
-      [],
-      `Invalid boolean value '${value}'. Expected one of: ${[...truthyValues, ...falsyValues].join(', ')}`
-    )
-  );
-};
 
 /**
  * Parses and validates a Gremlin endpoint string.
@@ -146,27 +80,6 @@ const parseEndpoint = (
 };
 
 /**
- * Parses a string into a positive integer, with validation.
- * Returns Either.right(number) on success, Either.left(ConfigError) on failure.
- * @param field - Name of the config field (for error reporting)
- * @param value - Raw string value to parse
- */
-const parsePositiveInteger =
-  (field: string) =>
-  (value: string): Either.Either<number, ConfigError.ConfigError> => {
-    const parsed = parseInt(value.trim(), 10);
-    if (isNaN(parsed) || parsed <= 0) {
-      return Either.left(
-        ConfigError.InvalidData(
-          [],
-          `Invalid value for ${field}: '${value}'. Must be a positive integer`
-        )
-      );
-    }
-    return Either.right(parsed);
-  };
-
-/**
  * Parses a comma-separated string into a string array, trimming whitespace and removing empty entries.
  * @param value - Raw comma-separated string
  * @returns string[]
@@ -190,13 +103,9 @@ const GremlinEndpointConfig = pipe(
 );
 
 /**
- * GREMLIN_USE_SSL: boolean, default: false. Accepts: true/false/1/0/t/f/yes/no/y/n
+ * GREMLIN_USE_SSL: boolean, default: false.
  */
-const GremlinUseSslConfig = pipe(
-  Config.string('GREMLIN_USE_SSL'),
-  Config.withDefault(String(DEFAULTS.USE_SSL)),
-  Config.mapOrFail(parseBooleanValue)
-);
+const GremlinUseSslConfig = Config.withDefault(Config.boolean('GREMLIN_USE_SSL'), DEFAULTS.USE_SSL);
 
 /**
  * GREMLIN_USERNAME: string, optional. Gremlin DB username
@@ -220,27 +129,32 @@ const LogLevelConfig = pipe(
  * GREMLIN_IDLE_TIMEOUT: number, default: 300. Connection idle timeout (seconds)
  */
 const GremlinIdleTimeoutConfig = pipe(
-  Config.string('GREMLIN_IDLE_TIMEOUT'),
-  Config.withDefault('300'),
-  Config.mapOrFail(parsePositiveInteger('GREMLIN_IDLE_TIMEOUT'))
+  Config.integer('GREMLIN_IDLE_TIMEOUT'),
+  Config.withDefault(300),
+  Config.validate({
+    message: 'Idle timeout must be a positive integer',
+    validation: n => n > 0,
+  })
 );
 
 /**
  * GREMLIN_ENUM_DISCOVERY_ENABLED: boolean, default: true. Enable enum property discovery
  */
-const GremlinEnumDiscoveryEnabledConfig = pipe(
-  Config.string('GREMLIN_ENUM_DISCOVERY_ENABLED'),
-  Config.withDefault('true'),
-  Config.mapOrFail(parseBooleanValue)
+const GremlinEnumDiscoveryEnabledConfig = Config.withDefault(
+  Config.boolean('GREMLIN_ENUM_DISCOVERY_ENABLED'),
+  true
 );
 
 /**
  * GREMLIN_ENUM_CARDINALITY_THRESHOLD: number, default: 10. Max cardinality for enum detection
  */
 const GremlinEnumCardinalityThresholdConfig = pipe(
-  Config.string('GREMLIN_ENUM_CARDINALITY_THRESHOLD'),
-  Config.withDefault('10'),
-  Config.mapOrFail(parsePositiveInteger('GREMLIN_ENUM_CARDINALITY_THRESHOLD'))
+  Config.integer('GREMLIN_ENUM_CARDINALITY_THRESHOLD'),
+  Config.withDefault(10),
+  Config.validate({
+    message: 'Enum cardinality threshold must be a positive integer',
+    validation: n => n > 0,
+  })
 );
 
 /**
@@ -252,42 +166,35 @@ const GremlinEnumPropertyBlacklistConfig = pipe(
   Config.withDefault(
     'id,pk,name,description,startDate,endDate,arrival,departure,timestamp,createdAt,updatedAt'
   ),
-  Config.map(parseCommaSeparatedList),
-  Config.validate({
-    message: 'Enum property blacklist cannot be empty',
-    validation: list => list.length > 0,
-  })
+  Config.map(parseCommaSeparatedList)
 );
 
 /**
  * GREMLIN_SCHEMA_INCLUDE_SAMPLE_VALUES: boolean, default: false. Include sample values in schema output
  */
-const GremlinSchemaIncludeSampleValuesConfig = pipe(
-  Config.string('GREMLIN_SCHEMA_INCLUDE_SAMPLE_VALUES'),
-  Config.withDefault('false'),
-  Config.mapOrFail(parseBooleanValue)
+const GremlinSchemaIncludeSampleValuesConfig = Config.withDefault(
+  Config.boolean('GREMLIN_SCHEMA_INCLUDE_SAMPLE_VALUES'),
+  false
 );
 
 /**
  * GREMLIN_SCHEMA_MAX_ENUM_VALUES: number, default: 10. Max enum values per property (≤ 100)
  */
 const GremlinSchemaMaxEnumValuesConfig = pipe(
-  Config.string('GREMLIN_SCHEMA_MAX_ENUM_VALUES'),
-  Config.withDefault('10'),
-  Config.mapOrFail(parsePositiveInteger('GREMLIN_SCHEMA_MAX_ENUM_VALUES')),
+  Config.integer('GREMLIN_SCHEMA_MAX_ENUM_VALUES'),
+  Config.withDefault(10),
   Config.validate({
-    message: 'Max enum values must be reasonable (≤ 100)',
-    validation: value => value <= 100,
+    message: 'Max enum values must be a positive integer (≤ 100)',
+    validation: n => n > 0 && n <= 100,
   })
 );
 
 /**
  * GREMLIN_SCHEMA_INCLUDE_COUNTS: boolean, default: true. Include property counts in schema output
  */
-const GremlinSchemaIncludeCountsConfig = pipe(
-  Config.string('GREMLIN_SCHEMA_INCLUDE_COUNTS'),
-  Config.withDefault('true'),
-  Config.mapOrFail(parseBooleanValue)
+const GremlinSchemaIncludeCountsConfig = Config.withDefault(
+  Config.boolean('GREMLIN_SCHEMA_INCLUDE_COUNTS'),
+  true
 );
 
 /**
@@ -303,24 +210,12 @@ const GremlinConnectionConfig = pipe(
     password: GremlinPasswordConfig,
     idleTimeout: GremlinIdleTimeoutConfig,
   }),
-  Config.map(config => ({
-    host: config.endpoint.host,
-    port: config.endpoint.port,
-    traversalSource: config.endpoint.traversalSource,
-    useSSL: config.useSSL,
-    username: config.username,
-    password: config.password,
-    idleTimeout: config.idleTimeout,
-  })),
-  Config.validate({
-    message: 'Gremlin connection configuration validation failed',
-    validation: config =>
-      config.host.length > 0 &&
-      config.port > 0 &&
-      config.port <= 65535 &&
-      config.idleTimeout > 0 &&
-      config.traversalSource.length > 0,
-  })
+  Config.map(({ endpoint, ...rest }) => ({
+    host: endpoint.host,
+    port: endpoint.port,
+    traversalSource: endpoint.traversalSource,
+    ...rest,
+  }))
 );
 
 /**
@@ -328,24 +223,14 @@ const GremlinConnectionConfig = pipe(
  * Ensures enum discovery, cardinality, blacklist, sample values, max enum values, and counts are present and valid.
  * Returns a validated config object or throws ConfigError on failure.
  */
-const SchemaDiscoveryConfig = pipe(
-  Config.all({
-    enumDiscoveryEnabled: GremlinEnumDiscoveryEnabledConfig,
-    enumCardinalityThreshold: GremlinEnumCardinalityThresholdConfig,
-    enumPropertyBlacklist: GremlinEnumPropertyBlacklistConfig,
-    includeSampleValues: GremlinSchemaIncludeSampleValuesConfig,
-    maxEnumValues: GremlinSchemaMaxEnumValuesConfig,
-    includeCounts: GremlinSchemaIncludeCountsConfig,
-  }),
-  Config.validate({
-    message: 'Schema discovery configuration validation failed',
-    validation: config =>
-      config.enumCardinalityThreshold > 0 &&
-      config.maxEnumValues > 0 &&
-      config.maxEnumValues <= 100 &&
-      config.enumPropertyBlacklist.length > 0,
-  })
-);
+const SchemaDiscoveryConfig = Config.all({
+  enumDiscoveryEnabled: GremlinEnumDiscoveryEnabledConfig,
+  enumCardinalityThreshold: GremlinEnumCardinalityThresholdConfig,
+  enumPropertyBlacklist: GremlinEnumPropertyBlacklistConfig,
+  includeSampleValues: GremlinSchemaIncludeSampleValuesConfig,
+  maxEnumValues: GremlinSchemaMaxEnumValuesConfig,
+  includeCounts: GremlinSchemaIncludeCountsConfig,
+});
 
 /**
  * ServerConfig: Immutable server name and version from constants.ts
@@ -372,29 +257,14 @@ const LoggingConfig = pipe(
 /**
  * AppConfig: Complete validated application configuration object.
  * Aggregates gremlin, schema, server, and logging configs.
- * Performs final cross-cutting validation for sanity checks.
  * Throws ConfigError on any validation failure.
  */
-export const AppConfig = pipe(
-  Config.all({
-    gremlin: GremlinConnectionConfig,
-    schema: SchemaDiscoveryConfig,
-    server: ServerConfig,
-    logging: LoggingConfig,
-  }),
-  Config.validate({
-    message: 'Application configuration validation failed',
-    validation: config => {
-      // All individual validations are already handled by nested configs
-      // This is a final sanity check for cross-cutting concerns
-      const hasValidGremlin = config.gremlin.host.length > 0 && config.gremlin.port > 0;
-      const hasValidSchema = config.schema.maxEnumValues > 0;
-      const hasValidLogging = ['error', 'warn', 'info', 'debug'].includes(config.logging.level);
-
-      return hasValidGremlin && hasValidSchema && hasValidLogging;
-    },
-  })
-);
+export const AppConfig = Config.all({
+  gremlin: GremlinConnectionConfig,
+  schema: SchemaDiscoveryConfig,
+  server: ServerConfig,
+  logging: LoggingConfig,
+});
 
 /**
  * Type alias for the resolved, validated application configuration object.

@@ -34,16 +34,16 @@ export function registerEffectResourceHandlers(
       description: 'Real-time connection status of the Gremlin graph database',
       mimeType: MIME_TYPES.TEXT_PLAIN,
     },
-    async () => {
-      const result = await pipe(
-        GremlinService,
-        Effect.andThen(service => service.getStatus),
-        Effect.map(statusObj => statusObj.status),
-        Effect.catchAll(error => Effect.succeed(`${ERROR_PREFIXES.CONNECTION}: ${error}`)),
-        Runtime.runPromise(runtime)
-      );
-
-      return {
+    () =>
+      Effect.runPromise(
+        pipe(
+          GremlinService,
+          Effect.andThen(service => service.getStatus),
+          Effect.map(statusObj => statusObj.status),
+          Effect.catchAll(error => Effect.succeed(`${ERROR_PREFIXES.CONNECTION}: ${error}`)),
+          Effect.provide(runtime)
+        )
+      ).then(result => ({
         contents: [
           {
             uri: RESOURCE_URIS.STATUS,
@@ -51,8 +51,7 @@ export function registerEffectResourceHandlers(
             text: result,
           },
         ],
-      };
-    }
+      }))
   );
 
   // Register schema resource
@@ -64,15 +63,15 @@ export function registerEffectResourceHandlers(
         'Complete schema of the graph including vertex labels, edge labels, and relationship patterns',
       mimeType: MIME_TYPES.APPLICATION_JSON,
     },
-    async () => {
-      const result = await pipe(
-        GremlinService,
-        Effect.andThen(service => service.getSchema),
-        Effect.catchAll(error => Effect.succeed({ error: String(error) })),
-        Runtime.runPromise(runtime)
-      );
-
-      return {
+    () =>
+      Effect.runPromise(
+        pipe(
+          GremlinService,
+          Effect.andThen(service => service.getSchema),
+          Effect.catchAll(error => Effect.succeed({ error: String(error) })),
+          Effect.provide(runtime)
+        )
+      ).then(result => ({
         contents: [
           {
             uri: RESOURCE_URIS.SCHEMA,
@@ -80,7 +79,6 @@ export function registerEffectResourceHandlers(
             text: JSON.stringify(result, null, 2),
           },
         ],
-      };
-    }
+      }))
   );
 }

@@ -15,10 +15,11 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import { AppConfig, type AppConfigType } from './config.js';
-import { GremlinServiceLive } from './gremlin/service.js';
+import { GremlinService, GremlinServiceLive } from './gremlin/service.js';
+import { GremlinClientLive } from './gremlin/connection.js';
+import { SchemaServiceLive } from './gremlin/schema.js';
 import { registerEffectToolHandlers } from './handlers/tools.js';
 import { registerEffectResourceHandlers } from './handlers/resources.js';
-import { createMcpRuntime } from './handlers/effect-runtime-bridge.js';
 import { Errors } from './errors.js';
 
 /**
@@ -61,9 +62,8 @@ const makeMcpServerService = Effect.gen(function* () {
     version: config.server.version,
   });
 
-  // Create runtime for handlers
-  const serviceLayer = GremlinServiceLive(config);
-  const runtime = yield* createMcpRuntime(serviceLayer);
+  // Create runtime for handlers from the current context
+  const runtime = yield* Effect.runtime<GremlinService>();
 
   // Register handlers with dependency injection
   registerEffectToolHandlers(server, runtime);
@@ -109,12 +109,12 @@ const McpServerServiceLive = Layer.effect(McpServerService, makeMcpServerService
 
 /**
  * Layer composition providing all application dependencies.
- *
- * @param config - Application configuration
- * @returns Combined layer with Gremlin service and MCP server
  */
-const AppLayer = (config: AppConfigType) =>
-  Layer.mergeAll(GremlinServiceLive(config), McpServerServiceLive);
+const GremlinLayer = Layer.provide(GremlinServiceLive, SchemaServiceLive);
+const AppLayer = Layer.provide(
+  McpServerServiceLive,
+  Layer.provide(GremlinLayer, GremlinClientLive)
+);
 
 /**
  * Main application Effect.
@@ -295,7 +295,7 @@ const main = Effect.gen(function* () {
   // Run the main program with all services provided
   yield* pipe(
     withGracefulShutdown(program),
-    Effect.provide(AppLayer(config)),
+    Effect.provide(AppLayer),
     Effect.provide(createLoggerLayer(config))
   );
 });
@@ -316,15 +316,4 @@ const runMain = pipe(
   )
 );
 
-Effect.runPromiseExit(runMain).then(exit => {
-  if (exit._tag === 'Failure') {
-    const errorData = {
-      level: 'error',
-      message: '❌ Fatal error during application execution',
-      cause: String(exit.cause),
-      timestamp: new Date().toISOString(),
-    };
-    process.stderr.write(`${safeJsonStringify(errorData)}\n`);
-    process.exit(1);
-  }
-});
+Effect.runPromise(runMain);

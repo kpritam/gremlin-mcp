@@ -6,7 +6,7 @@
  * Eliminates boilerplate and ensures uniform behavior across all tools.
  */
 
-import { Effect, pipe, Runtime } from 'effect';
+import { Effect, pipe } from 'effect';
 import { z } from 'zod';
 import { GremlinService } from '../gremlin/service.js';
 
@@ -47,40 +47,35 @@ export const createErrorResponse = (message: string): McpToolResponse => ({
 /**
  * Simple tool handler that executes an Effect and returns proper MCP response
  */
-export const createToolEffect = <A>(
-  runtime: Runtime.Runtime<GremlinService>,
-  effect: Effect.Effect<A, unknown, GremlinService>,
+export const createToolEffect = <A, E, R>(
+  effect: Effect.Effect<A, E, R>,
   operationName: string
-): Promise<McpToolResponse> =>
+): Effect.Effect<McpToolResponse, never, R> =>
   pipe(
     effect,
     Effect.map(createSuccessResponse),
-    Effect.catchAll(error => Effect.succeed(createErrorResponse(`${operationName}: ${error}`))),
-    Runtime.runPromise(runtime)
+    Effect.catchAll(error => Effect.succeed(createErrorResponse(`${operationName}: ${error}`)))
   );
 
 /**
  * Simple string response tool handler
  */
-export const createStringToolEffect = <A>(
-  runtime: Runtime.Runtime<GremlinService>,
-  effect: Effect.Effect<A, unknown, GremlinService>,
+export const createStringToolEffect = <A, E, R>(
+  effect: Effect.Effect<A, E, R>,
   operationName: string
-): Promise<McpToolResponse> =>
+): Effect.Effect<McpToolResponse, never, R> =>
   pipe(
     effect,
     Effect.map(result => createStringResponse(String(result))),
-    Effect.catchAll(error => Effect.succeed(createErrorResponse(`${operationName}: ${error}`))),
-    Runtime.runPromise(runtime)
+    Effect.catchAll(error => Effect.succeed(createErrorResponse(`${operationName}: ${error}`)))
   );
 
 /**
  * Query result handler with structured error responses
  */
 export const createQueryEffect = (
-  runtime: Runtime.Runtime<GremlinService>,
   query: string
-): Promise<McpToolResponse> =>
+): Effect.Effect<McpToolResponse, never, GremlinService> =>
   pipe(
     GremlinService,
     Effect.andThen(service => service.executeQuery(query)),
@@ -92,25 +87,22 @@ export const createQueryEffect = (
         message: `Query failed: ${error}`,
       };
       return Effect.succeed(createSuccessResponse(errorResponse));
-    }),
-    Runtime.runPromise(runtime)
+    })
   );
 
 /**
  * Validated input tool handler
  */
 export const createValidatedToolEffect =
-  <T, A>(
-    runtime: Runtime.Runtime<GremlinService>,
+  <T, A, E, R>(
     schema: z.ZodSchema<T>,
-    handler: (input: T) => Effect.Effect<A, unknown, GremlinService>,
+    handler: (input: T) => Effect.Effect<A, E, R>,
     operationName: string
   ) =>
-  (args: unknown): Promise<McpToolResponse> =>
+  (args: unknown): Effect.Effect<McpToolResponse, never, R> =>
     pipe(
       Effect.try(() => schema.parse(args)),
       Effect.andThen(handler),
       Effect.map(createSuccessResponse),
-      Effect.catchAll(error => Effect.succeed(createErrorResponse(`${operationName}: ${error}`))),
-      Runtime.runPromise(runtime)
+      Effect.catchAll(error => Effect.succeed(createErrorResponse(`${operationName}: ${error}`)))
     );

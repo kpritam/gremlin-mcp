@@ -16,7 +16,7 @@ import {
   type RelationshipPattern,
   type Property,
 } from './models.js';
-import { Errors, type GremlinConnectionError } from '../errors.js';
+import { Errors, type GremlinConnectionError, type GremlinQueryError } from '../errors.js';
 import type { ConnectionState, SchemaConfig } from './types.js';
 
 // Import proper types from gremlin package
@@ -105,7 +105,7 @@ const executeSchemaGeneration = (
   g: GraphTraversalSource,
   config: SchemaConfig,
   startTime: number
-): Effect.Effect<GraphSchema, GremlinConnectionError> =>
+): Effect.Effect<GraphSchema, GremlinQueryError> =>
   Effect.gen(function* () {
     const graphLabels = yield* getGraphLabels(g);
     const counts = yield* getCounts(g, graphLabels, config);
@@ -134,9 +134,9 @@ const executeSchemaGeneration = (
  * Converts timeout exceptions to meaningful connection errors.
  */
 const applySchemaTimeout = (
-  schemaGeneration: Effect.Effect<GraphSchema, GremlinConnectionError>,
+  schemaGeneration: Effect.Effect<GraphSchema, GremlinQueryError>,
   config: SchemaConfig
-): Effect.Effect<GraphSchema, GremlinConnectionError> => {
+): Effect.Effect<GraphSchema, GremlinQueryError> => {
   const timeoutEffect = Effect.timeout(
     schemaGeneration,
     Duration.millis(config.timeoutMs || DEFAULT_SCHEMA_TIMEOUT_MS)
@@ -144,8 +144,9 @@ const applySchemaTimeout = (
 
   return Effect.catchTag(timeoutEffect, 'TimeoutException', () =>
     Effect.fail(
-      Errors.connection(
-        `Schema generation timed out after ${config.timeoutMs || DEFAULT_SCHEMA_TIMEOUT_MS}ms`
+      Errors.query(
+        `Schema generation timed out after ${config.timeoutMs || DEFAULT_SCHEMA_TIMEOUT_MS}ms`,
+        'schema-generation'
       )
     )
   );
@@ -168,7 +169,7 @@ const applySchemaTimeout = (
 export const generateGraphSchema = (
   connectionState: ConnectionState,
   config: SchemaConfig = DEFAULT_SCHEMA_CONFIG
-): Effect.Effect<GraphSchema, GremlinConnectionError> =>
+): Effect.Effect<GraphSchema, GremlinConnectionError | GremlinQueryError> =>
   Effect.gen(function* () {
     if (!connectionState.g) {
       return yield* Effect.fail(Errors.connection('Graph traversal source not available'));
@@ -191,11 +192,13 @@ const getGraphLabels = (g: GraphTraversalSource) =>
     const [vertexLabels, edgeLabels] = yield* Effect.all([
       Effect.tryPromise({
         try: () => g.V().label().dedup().toList(),
-        catch: (error: unknown) => Errors.connection('Failed to get vertex labels', { error }),
+        catch: (error: unknown) =>
+          Errors.query('Failed to get vertex labels', 'g.V().label().dedup().toList()', { error }),
       }),
       Effect.tryPromise({
         try: () => g.E().label().dedup().toList(),
-        catch: (error: unknown) => Errors.connection('Failed to get edge labels', { error }),
+        catch: (error: unknown) =>
+          Errors.query('Failed to get edge labels', 'g.E().label().dedup().toList()', { error }),
       }),
     ]);
 
@@ -228,11 +231,17 @@ const getCounts = (
     const [vertexCounts, edgeCounts] = yield* Effect.all([
       Effect.tryPromise({
         try: () => g.V().groupCount().by(label()).next(),
-        catch: (error: unknown) => Errors.connection('Failed to get vertex counts', { error }),
+        catch: (error: unknown) =>
+          Errors.query('Failed to get vertex counts', 'g.V().groupCount().by(label()).next()', {
+            error,
+          }),
       }),
       Effect.tryPromise({
         try: () => g.E().groupCount().by(label()).next(),
-        catch: (error: unknown) => Errors.connection('Failed to get edge counts', { error }),
+        catch: (error: unknown) =>
+          Errors.query('Failed to get edge counts', 'g.E().groupCount().by(label()).next()', {
+            error,
+          }),
       }),
     ]);
 
@@ -275,7 +284,7 @@ const buildSchemaData = (
     catch: (error: unknown) => {
       console.error('Schema validation error:', error);
       console.error('Schema data that failed:', JSON.stringify(schemaData, null, 2));
-      return Errors.connection('Schema validation failed', { error });
+      return Errors.query('Schema validation failed', 'schema-validation', { error });
     },
   });
 };
@@ -288,7 +297,7 @@ const analyzeAllVertexProperties = (
   vertexLabels: string[],
   config: SchemaConfig,
   vertexCounts: SchemaCountData | null
-): Effect.Effect<Node[], GremlinConnectionError> =>
+): Effect.Effect<Node[], GremlinQueryError> =>
   Effect.gen(function* () {
     const batchSize = config.batchSize || DEFAULT_BATCH_SIZE;
 
@@ -309,7 +318,7 @@ const analyzeVertexPropertiesBatched = (
   vertexLabel: string,
   config: SchemaConfig,
   vertexCounts: SchemaCountData | null
-): Effect.Effect<Node, GremlinConnectionError> =>
+): Effect.Effect<Node, GremlinQueryError> =>
   Effect.gen(function* () {
     const propertyAnalysis = yield* batchAnalyzeVertexProperties(g, vertexLabel, config);
     const count = config.includeCounts
@@ -331,7 +340,7 @@ const analyzeAllEdgeProperties = (
   edgeLabels: string[],
   config: SchemaConfig,
   edgeCounts: SchemaCountData | null
-): Effect.Effect<Relationship[], GremlinConnectionError> =>
+): Effect.Effect<Relationship[], GremlinQueryError> =>
   Effect.gen(function* () {
     const batchSize = config.batchSize || DEFAULT_BATCH_SIZE;
 
@@ -352,7 +361,7 @@ const analyzeEdgePropertiesBatched = (
   edgeLabel: string,
   config: SchemaConfig,
   edgeCounts: SchemaCountData | null
-): Effect.Effect<Relationship, GremlinConnectionError> =>
+): Effect.Effect<Relationship, GremlinQueryError> =>
   Effect.gen(function* () {
     const propertyAnalysis = yield* batchAnalyzeEdgeProperties(g, edgeLabel, config);
     const count = config.includeCounts
@@ -373,13 +382,17 @@ const batchAnalyzeVertexProperties = (
   g: GraphTraversalSource,
   vertexLabel: string,
   config: SchemaConfig
-): Effect.Effect<Property[], GremlinConnectionError> =>
+): Effect.Effect<Property[], GremlinQueryError> =>
   Effect.gen(function* () {
     // Get all property keys first
     const propertyKeys = yield* Effect.tryPromise({
       try: () => g.V().hasLabel(vertexLabel).limit(100).properties().key().dedup().toList(),
       catch: (error: unknown) =>
-        Errors.connection(`Failed to get properties for vertex ${vertexLabel}`, { error }),
+        Errors.query(
+          `Failed to get properties for vertex ${vertexLabel}`,
+          `g.V().hasLabel('${vertexLabel}').limit(100).properties().key().dedup().toList()`,
+          { error }
+        ),
     });
 
     const keyList = propertyKeys as string[];
@@ -398,13 +411,17 @@ const batchAnalyzeEdgeProperties = (
   g: GraphTraversalSource,
   edgeLabel: string,
   config: SchemaConfig
-): Effect.Effect<Property[], GremlinConnectionError> =>
+): Effect.Effect<Property[], GremlinQueryError> =>
   Effect.gen(function* () {
     // Get all property keys first
     const propertyKeys = yield* Effect.tryPromise({
       try: () => g.E().hasLabel(edgeLabel).limit(100).properties().key().dedup().toList(),
       catch: (error: unknown) =>
-        Errors.connection(`Failed to get properties for edge ${edgeLabel}`, { error }),
+        Errors.query(
+          `Failed to get properties for edge ${edgeLabel}`,
+          `g.E().hasLabel('${edgeLabel}').limit(100).properties().key().dedup().toList()`,
+          { error }
+        ),
     });
 
     const keyList = propertyKeys as string[];
@@ -425,7 +442,7 @@ const batchAnalyzeSingleProperty = (
   propertyKey: string,
   config: SchemaConfig,
   isVertex: boolean
-): Effect.Effect<Property, GremlinConnectionError> =>
+): Effect.Effect<Property, GremlinQueryError> =>
   Effect.gen(function* () {
     // Skip blacklisted properties
     if (config.enumPropertyBlacklist.includes(propertyKey)) {
@@ -447,7 +464,11 @@ const batchAnalyzeSingleProperty = (
           .limit(config.maxEnumValues + 1)
           .toList(),
       catch: (error: unknown) =>
-        Errors.connection(`Failed to get values for property ${propertyKey}`, { error }),
+        Errors.query(
+          `Failed to get values for property ${propertyKey}`,
+          `g.${isVertex ? 'V' : 'E'}().hasLabel('${elementLabel}').limit(50).values('${propertyKey}').dedup().limit(${config.maxEnumValues + 1}).toList()`,
+          { error }
+        ),
     });
 
     const valueList = sampleValues as unknown[];
@@ -522,7 +543,11 @@ const generateRelationshipPatterns = (g: GraphTraversalSource, edgeLabels: strin
           .limit(1000) // Increased limit since we're doing one query
           .toList(),
       catch: (error: unknown) =>
-        Errors.connection('Failed to get relationship patterns', { error }),
+        Errors.query(
+          'Failed to get relationship patterns',
+          `g.E().project('from', 'to', 'label').by(outV().label()).by(inV().label()).by(label()).dedup().limit(1000).toList()`,
+          { error }
+        ),
     });
 
     // Gremlin project() returns a Map-like object, need to extract properly

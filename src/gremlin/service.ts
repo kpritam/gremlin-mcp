@@ -6,26 +6,17 @@
  * and error handling.
  */
 
-import { Effect, Ref, Option, Context, Layer, pipe } from 'effect';
-import { type GraphSchema, type GremlinQueryResult, GremlinQueryResultSchema } from './models.js';
+import { Effect, Context, Layer, pipe } from 'effect';
+import { type GremlinQueryResult, GremlinQueryResultSchema } from './models.js';
 import { parseGremlinResultsWithMetadata } from '../utils/result-parser.js';
 import { isGremlinResult } from '../utils/type-guards.js';
-import { GremlinConnectionError, GremlinQueryError, Errors } from '../errors.js';
-import type { AppConfigType } from '../config.js';
+import { GremlinConnectionError, GremlinQueryError, Errors, ParseError } from '../errors.js';
+import { GremlinClient } from './client.js';
+import { SchemaService } from './schema.js';
 
 // Import proper types from gremlin package
-import type { driver } from 'gremlin';
-type GremlinClient = driver.Client;
-type GremlinResultSet = driver.ResultSet;
-import type { ConnectionState, ServiceStatus } from './types.js';
-import { ensureConnection, getConnectionStatus } from './connection.js';
-import {
-  createSchemaCache,
-  getCachedSchema,
-  peekCachedSchema,
-  refreshSchemaCache,
-} from './schema-cache.js';
-import { generateGraphSchema, DEFAULT_SCHEMA_CONFIG } from './schema-generator.js';
+import type { GremlinClientType, GremlinResultSet } from './types.js';
+import type { GraphSchema, ServiceStatus } from './types.js';
 
 /**
  * Gremlin service using Effect Context.Tag pattern.
@@ -41,208 +32,147 @@ import { generateGraphSchema, DEFAULT_SCHEMA_CONFIG } from './schema-generator.j
 export class GremlinService extends Context.Tag('GremlinService')<
   GremlinService,
   {
-    readonly getStatus: Effect.Effect<ServiceStatus, GremlinConnectionError>;
-    readonly getSchema: Effect.Effect<GraphSchema, GremlinConnectionError>;
+    readonly getStatus: Effect.Effect<ServiceStatus, never>;
+    readonly getSchema: Effect.Effect<GraphSchema, GremlinConnectionError | GremlinQueryError>;
     readonly getCachedSchema: Effect.Effect<GraphSchema | null, never>;
-    readonly refreshSchemaCache: Effect.Effect<void, GremlinConnectionError>;
+    readonly refreshSchemaCache: Effect.Effect<void, GremlinConnectionError | GremlinQueryError>;
     readonly executeQuery: (
       query: string
-    ) => Effect.Effect<GremlinQueryResult, GremlinQueryError | GremlinConnectionError>;
-    readonly healthCheck: Effect.Effect<
-      { healthy: boolean; details: string },
-      GremlinConnectionError
-    >;
+    ) => Effect.Effect<GremlinQueryResult, GremlinQueryError | GremlinConnectionError | ParseError>;
+    readonly healthCheck: Effect.Effect<{ healthy: boolean; details: string }, never>;
   }
 >() {}
 
 /**
  * Creates the Gremlin service implementation with dependency injection.
  *
- * @param config - Application configuration containing Gremlin connection settings
  * @returns Effect providing the complete service implementation
  *
  * The service implementation manages:
- * - Connection state through a Ref for safe concurrent access
+ * - Connection state through the GremlinClient service
  * - Schema cache with automatic generation and refresh capabilities
  * - Query execution with result transformation and validation
  * - Health monitoring and status reporting
  */
-const makeGremlinService = (config: AppConfigType): Effect.Effect<typeof GremlinService.Service> =>
-  Effect.gen(function* () {
-    // Initialize connection state
-    const connectionRef = yield* Ref.make<Option.Option<ConnectionState>>(Option.none());
+const makeGremlinService = Effect.gen(function* () {
+  const gremlinClient = yield* GremlinClient;
+  const schemaService = yield* SchemaService;
 
-    // Initialize schema cache
-    const schemaCacheRef = yield* createSchemaCache();
-
-    // Create schema generation effect with connection dependency
-    const generateSchema = Effect.gen(function* () {
-      const connectionState = yield* ensureConnection(connectionRef, config);
-      return yield* generateGraphSchema(connectionState, DEFAULT_SCHEMA_CONFIG);
-    });
-
-    /**
-     * Executes a raw Gremlin query against the client.
-     *
-     * @param query - Gremlin traversal query string
-     * @param client - Gremlin client instance
-     * @returns Effect with query results or execution error
-     */
-    const executeRawQuery = (
-      query: string,
-      client: GremlinClient
-    ): Effect.Effect<unknown, GremlinQueryError> =>
-      pipe(
-        Effect.tryPromise(() => client.submit(query)),
-        Effect.mapError((error: unknown) => Errors.query('Query execution failed', query, error))
-      );
-
-    /**
-     * Processes Gremlin ResultSet into standard array format.
-     *
-     * @param resultSet - Raw result from Gremlin client
-     * @returns Array of result items
-     *
-     * Handles various result formats:
-     * - ResultSet objects with _items property
-     * - Objects with toArray() method
-     * - Direct arrays
-     * - Single values (wrapped in array)
-     */
-    const processResultSet = (resultSet: unknown): unknown[] => {
-      // Handle ResultSet objects (with _items property)
-      if (resultSet && typeof resultSet === 'object' && '_items' in resultSet) {
-        return (resultSet as unknown as GremlinResultSet).toArray();
-      }
-      // Handle objects with toArray method
-      if (resultSet && typeof resultSet === 'object' && 'toArray' in resultSet) {
-        return (resultSet as GremlinResultSet).toArray();
-      }
-      // Handle direct arrays
-      if (Array.isArray(resultSet)) {
-        return resultSet;
-      }
-      // Handle single values
-      return resultSet !== undefined ? [resultSet] : [];
-    };
-
-    /**
-     * Transforms raw result set into parsed GremlinQueryResult format.
-     *
-     * @param query - Original query string for error context
-     * @param resultSet - Raw result set from Gremlin
-     * @returns Effect with parsed results and metadata
-     */
-    const transformGremlinResult = (
-      query: string,
-      resultSet: unknown
-    ): Effect.Effect<{ results: unknown[]; message: string }, GremlinQueryError> =>
-      pipe(
-        Effect.sync(() => processResultSet(resultSet)),
-        Effect.map(dataArray => {
-          const parsed = parseGremlinResultsWithMetadata(dataArray);
-          return {
-            results: parsed.results,
-            message: 'Query executed successfully',
-          };
-        }),
-        Effect.mapError((error: unknown) => Errors.query('Result parsing failed', query, error))
-      );
-
-    /**
-     * Validates query result against the GremlinQueryResult schema.
-     *
-     * @param query - Original query string for error context
-     * @param result - Parsed result object
-     * @returns Effect with validated GremlinQueryResult
-     */
-    const validateQueryResult = (
-      query: string,
-      result: unknown
-    ): Effect.Effect<GremlinQueryResult, GremlinQueryError> =>
-      pipe(
-        Effect.try(() => GremlinQueryResultSchema.parse(result)),
-        Effect.mapError((error: unknown) => Errors.query('Result validation failed', query, error))
-      );
-
-    /**
-     * Executes a Gremlin query with comprehensive error handling.
-     *
-     * @param query - Gremlin traversal query string
-     * @returns Effect with parsed and validated query results
-     *
-     * Pipeline:
-     * 1. Ensures valid connection exists
-     * 2. Executes raw query against client
-     * 3. Validates result format
-     * 4. Transforms and parses results
-     * 5. Validates against schema
-     */
-    const executeQuery = (
-      query: string
-    ): Effect.Effect<GremlinQueryResult, GremlinQueryError | GremlinConnectionError> =>
-      pipe(
-        Effect.logDebug(`Executing Gremlin query: ${query}`),
-        Effect.andThen(() => ensureConnection(connectionRef, config)),
-        Effect.filterOrFail(
-          state => state.client !== null,
-          () => Errors.query('Client not initialized', query)
-        ),
-        Effect.andThen(state => executeRawQuery(query, state.client!)),
-        Effect.filterOrFail(isGremlinResult, resultSet =>
-          Errors.query('Invalid result format received', query, resultSet)
-        ),
-        Effect.andThen(resultSet => transformGremlinResult(query, resultSet)),
-        Effect.andThen(parsedResults => validateQueryResult(query, parsedResults))
-      );
-
-    /**
-     * Get status with proper ServiceStatus object format
-     */
-    const getStatus = getConnectionStatus(connectionRef, config).pipe(
-      Effect.map(
-        (): ServiceStatus => ({
-          status: 'connected' as const,
-        })
-      ),
-      Effect.catchAll(() =>
-        Effect.succeed({
-          status: 'disconnected' as const,
-        })
-      )
+  /**
+   * Executes a raw Gremlin query against the client.
+   *
+   * @param query - Gremlin traversal query string
+   * @param client - Gremlin client instance
+   * @returns Effect with query results or execution error
+   */
+  const executeRawQuery = (
+    query: string,
+    client: GremlinClientType
+  ): Effect.Effect<unknown, GremlinQueryError> =>
+    pipe(
+      Effect.tryPromise(() => client.submit(query)),
+      Effect.mapError((error: unknown) => Errors.query('Query execution failed', query, error))
     );
 
-    /**
-     * Health check with proper Effect error handling
-     */
-    const healthCheck = getConnectionStatus(connectionRef, config).pipe(
-      Effect.map(() => ({
-        healthy: true,
-        details: 'Connected',
+  /**
+   * Processes Gremlin ResultSet into standard array format.
+   *
+   * @param resultSet - Raw result from Gremlin client
+   * @returns Array of result items
+   */
+  const processResultSet = (resultSet: unknown): unknown[] => {
+    if (resultSet && typeof resultSet === 'object' && '_items' in resultSet) {
+      return (resultSet as unknown as GremlinResultSet).toArray();
+    }
+    if (Array.isArray(resultSet)) {
+      return resultSet;
+    }
+    return resultSet !== undefined ? [resultSet] : [];
+  };
+
+  /**
+   * Transforms raw result set into parsed GremlinQueryResult format.
+   *
+   * @param query - Original query string for error context
+   * @param resultSet - Raw result set from Gremlin
+   * @returns Effect with parsed results and metadata
+   */
+  const transformGremlinResult = (
+    query: string,
+    resultSet: unknown
+  ): Effect.Effect<{ results: unknown[]; message: string }, ParseError> =>
+    pipe(
+      Effect.sync(() => processResultSet(resultSet)),
+      Effect.flatMap(dataArray => parseGremlinResultsWithMetadata(dataArray)),
+      Effect.map(parsed => ({
+        results: parsed.results,
+        message: 'Query executed successfully',
       })),
-      Effect.catchAll(() =>
-        Effect.succeed({
-          healthy: false,
-          details: 'Health check failed',
-        })
-      )
+      Effect.mapError(error => Errors.parse('Result parsing failed', query, error))
     );
 
-    return {
-      getStatus,
-      getSchema: getCachedSchema(schemaCacheRef, generateSchema),
-      getCachedSchema: peekCachedSchema(schemaCacheRef),
-      refreshSchemaCache: refreshSchemaCache(schemaCacheRef, generateSchema),
-      executeQuery,
-      healthCheck,
-    } as const;
+  /**
+   * Validates query result against the GremlinQueryResult schema.
+   *
+   * @param query - Original query string for error context
+   * @param result - Parsed result object
+   * @returns Effect with validated GremlinQueryResult
+   */
+  const validateQueryResult = (
+    query: string,
+    result: unknown
+  ): Effect.Effect<GremlinQueryResult, ParseError> =>
+    pipe(
+      Effect.try(() => GremlinQueryResultSchema.parse(result)),
+      Effect.mapError((error: unknown) => Errors.parse('Result validation failed', query, error))
+    );
+
+  /**
+   * Executes a Gremlin query with comprehensive error handling.
+   *
+   * @param query - Gremlin traversal query string
+   * @returns Effect with parsed and validated query results
+   */
+  const executeQuery = (
+    query: string
+  ): Effect.Effect<GremlinQueryResult, GremlinQueryError | GremlinConnectionError | ParseError> =>
+    pipe(
+      Effect.logDebug(`Executing Gremlin query: ${query}`),
+      Effect.andThen(() => executeRawQuery(query, gremlinClient.client)),
+      Effect.filterOrFail(isGremlinResult, resultSet =>
+        Errors.query('Invalid result format received', query, resultSet)
+      ),
+      Effect.andThen(resultSet => transformGremlinResult(query, resultSet)),
+      Effect.andThen(parsedResults => validateQueryResult(query, parsedResults))
+    );
+
+  /**
+   * Get status with proper ServiceStatus object format
+   */
+  const getStatus = Effect.succeed({ status: 'connected' as const });
+
+  /**
+   * Health check with proper Effect error handling
+   */
+  const healthCheck = Effect.succeed({
+    healthy: true,
+    details: 'Connected',
   });
+
+  return {
+    getStatus,
+    getSchema: schemaService.getSchema,
+    getCachedSchema: schemaService.peekSchema,
+    refreshSchemaCache: schemaService.refreshSchema,
+    executeQuery,
+    healthCheck,
+  } as const;
+});
 
 /**
  * Creates a layer providing the Gremlin service implementation.
  *
- * @param config - Application configuration with Gremlin settings
- * @returns Effect layer for dependency injection
+ * This layer depends on the `GremlinClient` service, which is expected
+ * to be provided elsewhere in the application's layer composition.
  */
-export const GremlinServiceLive = (config: AppConfigType) =>
-  Layer.effect(GremlinService, makeGremlinService(config));
+export const GremlinServiceLive = Layer.effect(GremlinService, makeGremlinService);

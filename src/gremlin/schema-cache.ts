@@ -1,22 +1,34 @@
 /**
- * Schema caching with Effect.ts patterns and intelligent TTL management
+ * @fileoverview Schema caching with Effect.ts patterns and intelligent TTL management.
+ *
+ * This module provides a set of functions for creating and managing a schema cache.
+ * It uses `Effect.Ref` for concurrent state management and `Effect.Duration` for
+ * time-to-live (TTL) based cache validation. The cache can be manually invalidated
+ * or automatically refreshed.
  */
 
 import { Effect, Ref, Option, Duration } from 'effect';
 import type { GraphSchema } from './models.js';
 import type { SchemaCacheEntry } from './types.js';
-import type { GremlinConnectionError } from '../errors.js';
+import type { GremlinConnectionError, GremlinQueryError } from '../errors.js';
 
 // Constants
 const SCHEMA_CACHE_TTL = Duration.minutes(5);
 
 /**
- * Create schema cache with manual invalidation support
+ * Creates a new schema cache as a `Ref`.
+ *
+ * The cache is initialized as `Option.none()`, indicating that it is empty.
+ *
+ * @returns An `Effect` that resolves to a `Ref` containing an `Option<SchemaCacheEntry>`.
  */
 export const createSchemaCache = () => Ref.make<Option.Option<SchemaCacheEntry>>(Option.none());
 
 /**
- * Helper to check if cache entry is still valid
+ * Checks if a cache entry is still valid based on its timestamp and the cache TTL.
+ *
+ * @param cacheEntry The schema cache entry to validate.
+ * @returns `true` if the cache entry is still valid, `false` otherwise.
  */
 export const isCacheValid = (cacheEntry: SchemaCacheEntry): boolean => {
   const now = Date.now();
@@ -25,11 +37,18 @@ export const isCacheValid = (cacheEntry: SchemaCacheEntry): boolean => {
 };
 
 /**
- * Get schema from cache with intelligent cache validation
+ * Retrieves the schema from the cache.
+ *
+ * If the cache contains a valid entry, it is returned. Otherwise, a new schema
+ * is generated using the provided `generateSchema` effect, and the cache is updated.
+ *
+ * @param cacheRef A `Ref` to the schema cache.
+ * @param generateSchema An `Effect` that generates a new `GraphSchema`.
+ * @returns An `Effect` that resolves to the `GraphSchema` or fails with an error.
  */
 export const getCachedSchema = (
   cacheRef: Ref.Ref<Option.Option<SchemaCacheEntry>>,
-  generateSchema: Effect.Effect<GraphSchema, GremlinConnectionError>
+  generateSchema: Effect.Effect<GraphSchema, GremlinConnectionError | GremlinQueryError>
 ) =>
   Effect.gen(function* () {
     const cacheEntry = yield* Ref.get(cacheRef);
@@ -60,7 +79,10 @@ export const getCachedSchema = (
   });
 
 /**
- * Get cached schema without generating new one
+ * Retrieves the cached schema without generating a new one if it's missing or invalid.
+ *
+ * @param cacheRef A `Ref` to the schema cache.
+ * @returns An `Effect` that resolves to the `GraphSchema` or `null` if the cache is empty.
  */
 export const peekCachedSchema = (cacheRef: Ref.Ref<Option.Option<SchemaCacheEntry>>) =>
   Effect.gen(function* () {
@@ -72,7 +94,10 @@ export const peekCachedSchema = (cacheRef: Ref.Ref<Option.Option<SchemaCacheEntr
   });
 
 /**
- * Invalidate schema cache
+ * Invalidates the schema cache by setting it to `Option.none()`.
+ *
+ * @param cacheRef A `Ref` to the schema cache.
+ * @returns An `Effect` that completes when the cache is invalidated.
  */
 export const invalidateSchemaCache = (cacheRef: Ref.Ref<Option.Option<SchemaCacheEntry>>) =>
   Effect.gen(function* () {
@@ -81,11 +106,15 @@ export const invalidateSchemaCache = (cacheRef: Ref.Ref<Option.Option<SchemaCach
   });
 
 /**
- * Refresh schema cache by invalidating and regenerating
+ * Refreshes the schema cache by invalidating it and then regenerating the schema.
+ *
+ * @param cacheRef A `Ref` to the schema cache.
+ * @param generateSchema An `Effect` that generates a new `GraphSchema`.
+ * @returns An `Effect` that completes when the cache is refreshed.
  */
 export const refreshSchemaCache = (
   cacheRef: Ref.Ref<Option.Option<SchemaCacheEntry>>,
-  generateSchema: Effect.Effect<GraphSchema, GremlinConnectionError>
+  generateSchema: Effect.Effect<GraphSchema, GremlinConnectionError | GremlinQueryError>
 ) =>
   Effect.gen(function* () {
     yield* Effect.logInfo('Refreshing schema cache');

@@ -29,16 +29,15 @@ export const createScopedConnection = (
       const protocol = config.gremlin.useSSL ? 'wss' : 'ws';
       const connectionUrl = `${protocol}://${config.gremlin.host}:${config.gremlin.port}/gremlin`;
 
-      // Create authentication config if credentials are provided
-      const authConfig =
-        Option.isSome(config.gremlin.username) && Option.isSome(config.gremlin.password)
-          ? {
-              auth: {
-                username: Option.getOrThrow(config.gremlin.username),
-                password: Option.getOrThrow(config.gremlin.password),
-              },
-            }
-          : {};
+      // Create authentication config if credentials are provided (idiomatic Option usage)
+      const authOption = Option.zipWith(
+        config.gremlin.username,
+        config.gremlin.password,
+        (username, password) => ({
+          auth: { username, password },
+        })
+      );
+      const authConfig = Option.getOrElse(authOption, () => ({}));
 
       // Configure client with logging to stderr
       const clientConfig = {
@@ -67,8 +66,8 @@ export const createScopedConnection = (
         },
       };
 
-      const connection = yield* Effect.tryPromise({
-        try: () => Promise.resolve(new DriverRemoteConnection(connectionUrl, connectionConfig)),
+      const connection = yield* Effect.try({
+        try: () => new DriverRemoteConnection(connectionUrl, connectionConfig),
         catch: error => Errors.connection('Failed to create remote connection', { error }),
       });
 
@@ -99,9 +98,10 @@ export const createScopedConnection = (
       Effect.gen(function* () {
         yield* Effect.logInfo('Releasing Gremlin connection');
 
-        if (state.connection) {
+        const c = state.connection;
+        if (c) {
           yield* Effect.tryPromise({
-            try: () => state.connection!.close(),
+            try: () => c.close(),
             catch: error =>
               Errors.connection('Failed to close Gremlin connection during release', {
                 error,
@@ -210,29 +210,40 @@ export const ensureConnection = (
     const optionalConnectionState = yield* Ref.get(connectionRef);
     const currentTimestamp = Date.now();
 
-    if (Option.isSome(optionalConnectionState)) {
-      const connectionState = Option.getOrThrow(optionalConnectionState);
-      const idleTimeMs = currentTimestamp - connectionState.lastUsed;
-      const idleTimeoutMs = config.gremlin.idleTimeout * 1000; // Convert to milliseconds
+    return yield* Option.match(optionalConnectionState, {
+      onNone: () =>
+        Effect.gen(function* () {
+          // No connection, create new
+          const newConnectionState = yield* createConnection(config);
+          yield* Ref.set(connectionRef, Option.some(newConnectionState));
+          return newConnectionState;
+        }),
+      onSome: connectionState =>
+        Effect.gen(function* () {
+          const idleTimeMs = currentTimestamp - connectionState.lastUsed;
+          const idleTimeoutMs = config.gremlin.idleTimeout * 1000; // Convert to milliseconds
 
-      if (idleTimeMs < idleTimeoutMs && connectionState.client) {
-        // Update last used time atomically
-        yield* Ref.set(
-          connectionRef,
-          Option.some({ ...connectionState, lastUsed: currentTimestamp })
-        );
-        return connectionState;
-      }
+          if (idleTimeMs < idleTimeoutMs && connectionState.client) {
+            // Update last used time atomically
+            yield* Ref.set(
+              connectionRef,
+              Option.some({ ...connectionState, lastUsed: currentTimestamp })
+            );
+            return connectionState;
+          }
 
-      // Connection is idle, close it gracefully
-      yield* Effect.logInfo(`Connection idle for ${Math.round(idleTimeMs / 1000)}s, refreshing`);
-      yield* closeConnections(connectionRef);
-    }
+          // Connection is idle, close it gracefully
+          yield* Effect.logInfo(
+            `Connection idle for ${Math.round(idleTimeMs / 1000)}s, refreshing`
+          );
+          yield* closeConnections(connectionRef);
 
-    // Create new connection with proper resource management
-    const newConnectionState = yield* createConnection(config);
-    yield* Ref.set(connectionRef, Option.some(newConnectionState));
-    return newConnectionState;
+          // Create new connection after closing
+          const newConnectionState = yield* createConnection(config);
+          yield* Ref.set(connectionRef, Option.some(newConnectionState));
+          return newConnectionState;
+        }),
+    });
   });
 
 /**

@@ -15,7 +15,7 @@ import type { AppConfigType } from '../config.js';
 import type { driver } from 'gremlin';
 type GremlinClient = driver.Client;
 type GremlinResultSet = driver.ResultSet;
-import type { ConnectionState } from './types.js';
+import type { ConnectionState, ServiceStatus } from './types.js';
 import { ensureConnection, getConnectionStatus } from './connection.js';
 import {
   createSchemaCache,
@@ -31,7 +31,7 @@ import { generateGraphSchema, DEFAULT_SCHEMA_CONFIG } from './schema-generator.j
 export class GremlinService extends Context.Tag('GremlinService')<
   GremlinService,
   {
-    readonly getStatus: Effect.Effect<string, GremlinConnectionError>;
+    readonly getStatus: Effect.Effect<ServiceStatus, GremlinConnectionError>;
     readonly getSchema: Effect.Effect<GraphSchema, GremlinConnectionError>;
     readonly getCachedSchema: Effect.Effect<GraphSchema | null, never>;
     readonly refreshSchemaCache: Effect.Effect<void, GremlinConnectionError>;
@@ -147,6 +147,22 @@ const makeGremlinService = (config: AppConfigType): Effect.Effect<typeof Gremlin
       );
 
     /**
+     * Get status with proper ServiceStatus object format
+     */
+    const getStatus = getConnectionStatus(connectionRef, config).pipe(
+      Effect.map(
+        (status): ServiceStatus => ({
+          status: status === 'Available' ? 'connected' : 'error',
+        })
+      ),
+      Effect.catchAll(() =>
+        Effect.succeed({
+          status: 'disconnected' as const,
+        })
+      )
+    );
+
+    /**
      * Health check with proper Effect error handling
      */
     const healthCheck = getConnectionStatus(connectionRef, config).pipe(
@@ -163,7 +179,7 @@ const makeGremlinService = (config: AppConfigType): Effect.Effect<typeof Gremlin
     );
 
     return {
-      getStatus: getConnectionStatus(connectionRef, config),
+      getStatus,
       getSchema: getCachedSchema(schemaCacheRef, generateSchema),
       getCachedSchema: peekCachedSchema(schemaCacheRef),
       refreshSchemaCache: refreshSchemaCache(schemaCacheRef, generateSchema),

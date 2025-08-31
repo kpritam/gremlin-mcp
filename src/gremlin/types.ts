@@ -40,3 +40,11 @@ export interface SchemaCacheEntry {
   schema: GraphSchema;
   timestamp: number;
 }
+
+/**
+ * Gremlin service status information
+ */
+export interface ServiceStatus {
+  /** Overall connection status */
+  status: 'connected' | 'disconnected' | 'error';
+}

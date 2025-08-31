@@ -32,6 +32,7 @@ export function registerEffectResourceHandlers(
           pipe(
             GremlinService,
             Effect.flatMap(service => service.getStatus),
+            Effect.map(statusObj => statusObj.status),
             Effect.catchAll(error =>
               Effect.succeed(`${ERROR_PREFIXES.CONNECTION}: ${error.message}`)
             )

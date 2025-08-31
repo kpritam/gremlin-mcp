@@ -57,7 +57,7 @@ export function registerEffectToolHandlers(
       inputSchema: {},
     },
     createSimpleToolHandler(
-      service => service.getStatus,
+      service => Effect.map(service.getStatus, statusObj => statusObj.status),
       'Connection status check failed',
       true
     ).bind(null, bridge)

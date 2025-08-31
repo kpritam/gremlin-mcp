@@ -7,7 +7,7 @@
  */
 
 import { z } from 'zod';
-import { GremlinResultItemSchema } from '../gremlin/models.js';
+import { GremlinResultItemSchema } from '../gremlin/models/index.js';
 import { calculateResultMetadata } from './result-metadata.js';
 import { Effect } from 'effect';
 import { Errors } from '../errors.js';

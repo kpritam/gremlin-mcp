@@ -3,7 +3,7 @@
  */
 
 import type { driver, process } from 'gremlin';
-import type { GraphSchema } from './models.js';
+import type { GraphSchema } from './models/index.js';
 
 export type { GraphSchema };
 

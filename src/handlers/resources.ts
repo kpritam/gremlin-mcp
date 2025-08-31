@@ -26,11 +26,12 @@ export function registerEffectResourceHandlers(
   server: McpServer,
   runtime: Runtime.Runtime<GremlinService>
 ): void {
-  // Register status resource
-  server.resource(
-    'Gremlin Graph Status',
+  // Register status resource using the recommended registerResource method
+  server.registerResource(
+    'status',
     RESOURCE_URIS.STATUS,
     {
+      title: 'Gremlin Graph Status',
       description: 'Real-time connection status of the Gremlin graph database',
       mimeType: MIME_TYPES.TEXT_PLAIN,
     },
@@ -54,11 +55,12 @@ export function registerEffectResourceHandlers(
       }))
   );
 
-  // Register schema resource
-  server.resource(
-    'Gremlin Graph Schema',
+  // Register schema resource using the recommended registerResource method
+  server.registerResource(
+    'schema',
     RESOURCE_URIS.SCHEMA,
     {
+      title: 'Gremlin Graph Schema',
       description:
         'Complete schema of the graph including vertex labels, edge labels, and relationship patterns',
       mimeType: MIME_TYPES.APPLICATION_JSON,

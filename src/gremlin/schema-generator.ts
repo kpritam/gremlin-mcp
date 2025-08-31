@@ -1,105 +1,53 @@
 /**
- * @fileoverview Comprehensive graph schema generation with analysis and optimizations.
+ * @fileoverview Streamlined graph schema generation orchestrator.
  *
- * Introspects Gremlin graph databases to generate detailed schemas including vertex/edge
- * labels, properties, cardinality analysis, and relationship patterns. Uses batching and
- * concurrency control for performance on large graphs.
+ * Coordinates schema generation using modular components for query execution,
+ * property analysis, relationship patterns, and schema assembly. Provides
+ * timeout protection and comprehensive error handling.
  */
 
 import { Effect, Duration } from 'effect';
-import gremlin from 'gremlin';
-import {
-  GraphSchemaSchema,
-  type GraphSchema,
-  type Node,
-  type Relationship,
-  type RelationshipPattern,
-  type Property,
-} from './models.js';
+import { type GraphSchema, type Node, type Relationship } from './models/index.js';
 import { Errors, type GremlinConnectionError, type GremlinQueryError } from '../errors.js';
 import type { ConnectionState, SchemaConfig } from './types.js';
-
-// Import proper types from gremlin package
+import {
+  getVertexLabels,
+  getEdgeLabels,
+  getVertexCounts,
+  getEdgeCounts,
+  getVertexPropertyKeys,
+  getEdgePropertyKeys,
+} from './query-utils.js';
+import { analyzeElementProperties, withElementCounts } from './property-analyzer.js';
+import { generateRelationshipPatterns } from './relationship-patterns.js';
+import { assembleGraphSchema } from './schema-assembly.js';
 import type { process } from 'gremlin';
+
 type GraphTraversalSource = process.GraphTraversalSource;
+type SchemaCountData = { value?: Record<string, number> } | null;
 
-/**
- * Schema generation with count data - wrapper for Gremlin groupCount() results.
- */
-interface SchemaCountData {
-  /** Mapping of labels to their counts */
-  value?: Record<string, number>;
-  /** Total count */
-  total?: number;
-}
-
-const { inV, outV, label } = gremlin.process.statics;
-
-/**
- * Processes items in controlled batches with concurrency limiting.
- *
- * @param items - Array of items to process
- * @param batchSize - Number of items per batch
- * @param processor - Effect to run on each item
- * @returns Effect with all processed results
- *
- * Critical for large graphs to avoid overwhelming the database with concurrent queries.
- * Processes batches sequentially but allows controlled concurrency within each batch.
- */
-const processBatched = <T, R, E>(
-  items: T[],
-  batchSize: number,
-  processor: (item: T) => Effect.Effect<R, E>
-): Effect.Effect<R[], E> =>
-  Effect.gen(function* () {
-    const batches: T[][] = [];
-    for (let i = 0; i < items.length; i += batchSize) {
-      batches.push(items.slice(i, i + batchSize));
-    }
-
-    const results: R[] = [];
-    for (const batch of batches) {
-      const batchResults = yield* Effect.all(batch.map(processor), {
-        concurrency: Math.min(batchSize, 10),
-      });
-      results.push(...batchResults);
-    }
-
-    return results;
-  });
-
-// Constants
-const DEFAULT_MAX_ENUM_VALUES = 10;
-const DEFAULT_ENUM_CARDINALITY_THRESHOLD = 10;
-const DEFAULT_SCHEMA_TIMEOUT_MS = 30000; // 30 seconds
-const DEFAULT_BATCH_SIZE = 10; // Process 10 labels at a time
+const DEFAULT_SCHEMA_TIMEOUT_MS = 30000;
 
 /**
  * Default schema configuration
  */
 export const DEFAULT_SCHEMA_CONFIG: SchemaConfig = {
   includeSampleValues: false,
-  maxEnumValues: DEFAULT_MAX_ENUM_VALUES,
+  maxEnumValues: 10,
   includeCounts: true,
-  enumCardinalityThreshold: DEFAULT_ENUM_CARDINALITY_THRESHOLD,
+  enumCardinalityThreshold: 10,
   enumPropertyBlacklist: ['id', 'label', 'lastUpdatedByUI'],
   timeoutMs: DEFAULT_SCHEMA_TIMEOUT_MS,
-  batchSize: DEFAULT_BATCH_SIZE,
+  batchSize: 10,
 };
 
 /**
- * Core schema generation logic with parallel analysis streams.
+ * Core schema generation orchestrator.
  *
  * @param g - Gremlin traversal source
  * @param config - Schema configuration
  * @param startTime - Generation start timestamp for metrics
  * @returns Effect with complete schema
- *
- * Pipeline execution:
- * 1. Discover all vertex and edge labels
- * 2. Get count data (if enabled)
- * 3. Run parallel analysis for vertices, edges, and relationship patterns
- * 4. Assemble final schema with metadata
  */
 const executeSchemaGeneration = (
   g: GraphTraversalSource,
@@ -107,21 +55,72 @@ const executeSchemaGeneration = (
   startTime: number
 ): Effect.Effect<GraphSchema, GremlinQueryError> =>
   Effect.gen(function* () {
-    const graphLabels = yield* getGraphLabels(g);
-    const counts = yield* getCounts(g, graphLabels, config);
+    // Step 1: Discover graph structure
+    yield* Effect.logInfo('Discovering graph structure');
+    const [vertexLabels, edgeLabels] = yield* Effect.all([getVertexLabels(g), getEdgeLabels(g)]);
 
-    // Use parallel streams for vertex and edge analysis
-    const [nodes, relationships, patterns] = yield* Effect.all(
+    yield* Effect.logInfo(
+      `Found ${vertexLabels.length} vertex labels and ${edgeLabels.length} edge labels`
+    );
+
+    // Step 2: Get counts if enabled
+    const [vertexCounts, edgeCounts] = yield* getElementCounts(g, config);
+
+    // Step 3: Analyze properties and patterns in parallel
+    yield* Effect.logInfo('Analyzing properties and relationship patterns');
+    const [rawNodes, rawRelationships, patterns] = yield* Effect.all(
       [
-        analyzeAllVertexProperties(g, graphLabels.vertexLabels, config, counts.vertexCounts),
-        analyzeAllEdgeProperties(g, graphLabels.edgeLabels, config, counts.edgeCounts),
-        generateRelationshipPatterns(g, graphLabels.edgeLabels),
+        analyzeElementProperties(g, vertexLabels, getVertexPropertyKeys, config, true),
+        analyzeElementProperties(g, edgeLabels, getEdgePropertyKeys, config, false),
+        generateRelationshipPatterns(g),
       ],
       { concurrency: 3 }
-    ); // Allow up to 3 concurrent operations
+    );
 
-    return yield* buildSchemaData(nodes, relationships, patterns, config, startTime);
+    // Step 4: Add count information
+    const nodes = addElementCounts<Node>(rawNodes, vertexCounts, config, 'labels');
+    const relationships = addElementCounts<Relationship>(
+      rawRelationships,
+      edgeCounts,
+      config,
+      'type'
+    );
+
+    // Step 5: Assemble final schema
+    return yield* assembleGraphSchema(nodes, relationships, patterns, config, startTime);
   });
+
+/**
+ * Gets vertex and edge counts if enabled in configuration.
+ */
+const getElementCounts = (
+  g: GraphTraversalSource,
+  config: SchemaConfig
+): Effect.Effect<[SchemaCountData, SchemaCountData], GremlinQueryError> => {
+  if (!config.includeCounts) {
+    return Effect.succeed([null, null]);
+  }
+
+  return Effect.all([getVertexCounts(g), getEdgeCounts(g)]);
+};
+
+/**
+ * Adds count information to analysis results.
+ */
+const addElementCounts = <T extends Node | Relationship>(
+  rawElements: unknown[],
+  counts: SchemaCountData,
+  config: SchemaConfig,
+  labelKey: 'labels' | 'type'
+): T[] => {
+  const addCounts = withElementCounts<T>(counts, config);
+
+  return rawElements.map(element => {
+    const elementData = element as Record<string, unknown>;
+    const label = elementData[labelKey] as string;
+    return addCounts(label, elementData as Omit<T, 'count'>);
+  });
+};
 
 /**
  * Applies timeout protection to schema generation.
@@ -129,18 +128,13 @@ const executeSchemaGeneration = (
  * @param schemaGeneration - Effect performing schema generation
  * @param config - Configuration with timeout settings
  * @returns Effect with timeout protection applied
- *
- * Critical for preventing runaway queries on large or complex graphs.
- * Converts timeout exceptions to meaningful connection errors.
  */
 const applySchemaTimeout = (
   schemaGeneration: Effect.Effect<GraphSchema, GremlinQueryError>,
   config: SchemaConfig
 ): Effect.Effect<GraphSchema, GremlinQueryError> => {
-  const timeoutEffect = Effect.timeout(
-    schemaGeneration,
-    Duration.millis(config.timeoutMs || DEFAULT_SCHEMA_TIMEOUT_MS)
-  );
+  const timeoutDuration = Duration.millis(config.timeoutMs || DEFAULT_SCHEMA_TIMEOUT_MS);
+  const timeoutEffect = Effect.timeout(schemaGeneration, timeoutDuration);
 
   return Effect.catchTag(timeoutEffect, 'TimeoutException', () =>
     Effect.fail(
@@ -178,417 +172,16 @@ export const generateGraphSchema = (
     const g = connectionState.g;
     const startTime = Date.now();
 
+    yield* Effect.logInfo('Starting graph schema generation', {
+      config: {
+        includeCounts: config.includeCounts,
+        includeSampleValues: config.includeSampleValues,
+        maxEnumValues: config.maxEnumValues,
+        timeoutMs: config.timeoutMs,
+        batchSize: config.batchSize,
+      },
+    });
+
     const schemaGeneration = executeSchemaGeneration(g, config, startTime);
     return yield* applySchemaTimeout(schemaGeneration, config);
-  });
-
-/**
- * Get graph labels (vertices and edges)
- */
-const getGraphLabels = (g: GraphTraversalSource) =>
-  Effect.gen(function* () {
-    yield* Effect.logInfo('Starting to fetch graph labels (vertices and edges)');
-
-    const [vertexLabels, edgeLabels] = yield* Effect.all([
-      Effect.tryPromise({
-        try: () => g.V().label().dedup().toList(),
-        catch: (error: unknown) =>
-          Errors.query('Failed to get vertex labels', 'g.V().label().dedup().toList()', { error }),
-      }),
-      Effect.tryPromise({
-        try: () => g.E().label().dedup().toList(),
-        catch: (error: unknown) =>
-          Errors.query('Failed to get edge labels', 'g.E().label().dedup().toList()', { error }),
-      }),
-    ]);
-
-    yield* Effect.logInfo(
-      `Found ${(vertexLabels as string[]).length} vertex labels: ${JSON.stringify(vertexLabels)}`
-    );
-    yield* Effect.logInfo(
-      `Found ${(edgeLabels as string[]).length} edge labels: ${JSON.stringify(edgeLabels)}`
-    );
-
-    return {
-      vertexLabels: vertexLabels as string[],
-      edgeLabels: edgeLabels as string[],
-    };
-  });
-
-/**
- * Get counts for vertices and edges if requested
- */
-const getCounts = (
-  g: GraphTraversalSource,
-  _labels: { vertexLabels: string[]; edgeLabels: string[] },
-  config: SchemaConfig
-) =>
-  Effect.gen(function* () {
-    if (!config.includeCounts) {
-      return { vertexCounts: {}, edgeCounts: {} };
-    }
-
-    const [vertexCounts, edgeCounts] = yield* Effect.all([
-      Effect.tryPromise({
-        try: () => g.V().groupCount().by(label()).next(),
-        catch: (error: unknown) =>
-          Errors.query('Failed to get vertex counts', 'g.V().groupCount().by(label()).next()', {
-            error,
-          }),
-      }),
-      Effect.tryPromise({
-        try: () => g.E().groupCount().by(label()).next(),
-        catch: (error: unknown) =>
-          Errors.query('Failed to get edge counts', 'g.E().groupCount().by(label()).next()', {
-            error,
-          }),
-      }),
-    ]);
-
-    return { vertexCounts, edgeCounts };
-  });
-
-/**
- * Build final schema data structure
- */
-const buildSchemaData = (
-  nodes: Node[],
-  relationships: Relationship[],
-  patterns: RelationshipPattern[],
-  config: SchemaConfig,
-  startTime: number
-) => {
-  const schemaData = {
-    nodes,
-    relationships,
-    relationship_patterns: patterns,
-    metadata: {
-      generated_at: new Date().toISOString(),
-      generation_time_ms: Date.now() - startTime,
-      node_count: nodes.length,
-      relationship_count: relationships.length,
-      pattern_count: patterns.length,
-      optimization_settings: {
-        sample_values_included: config.includeSampleValues,
-        max_enum_values: config.maxEnumValues,
-        counts_included: config.includeCounts,
-        enum_cardinality_threshold: config.enumCardinalityThreshold,
-        timeout_ms: config.timeoutMs || DEFAULT_SCHEMA_TIMEOUT_MS,
-        batch_size: config.batchSize || DEFAULT_BATCH_SIZE,
-      },
-    },
-  };
-
-  return Effect.try({
-    try: () => GraphSchemaSchema.parse(schemaData),
-    catch: (error: unknown) => {
-      console.error('Schema validation error:', error);
-      console.error('Schema data that failed:', JSON.stringify(schemaData, null, 2));
-      return Errors.query('Schema validation failed', 'schema-validation', { error });
-    },
-  });
-};
-
-/**
- * Analyze all vertex properties with batched processing
- */
-const analyzeAllVertexProperties = (
-  g: GraphTraversalSource,
-  vertexLabels: string[],
-  config: SchemaConfig,
-  vertexCounts: SchemaCountData | null
-): Effect.Effect<Node[], GremlinQueryError> =>
-  Effect.gen(function* () {
-    const batchSize = config.batchSize || DEFAULT_BATCH_SIZE;
-
-    yield* Effect.logInfo(
-      `Analyzing ${vertexLabels.length} vertex labels with batch size ${batchSize}`
-    );
-
-    return yield* processBatched(vertexLabels, batchSize, (vertexLabel: string) =>
-      analyzeVertexPropertiesBatched(g, vertexLabel, config, vertexCounts)
-    );
-  });
-
-/**
- * Analyze vertex properties for a given label using batched queries
- */
-const analyzeVertexPropertiesBatched = (
-  g: GraphTraversalSource,
-  vertexLabel: string,
-  config: SchemaConfig,
-  vertexCounts: SchemaCountData | null
-): Effect.Effect<Node, GremlinQueryError> =>
-  Effect.gen(function* () {
-    const propertyAnalysis = yield* batchAnalyzeVertexProperties(g, vertexLabel, config);
-    const count = config.includeCounts
-      ? (vertexCounts as SchemaCountData)?.value?.[vertexLabel] || 0
-      : undefined;
-
-    return {
-      labels: vertexLabel,
-      properties: propertyAnalysis,
-      ...(count !== undefined && { count }),
-    };
-  });
-
-/**
- * Analyze all edge properties with batched processing
- */
-const analyzeAllEdgeProperties = (
-  g: GraphTraversalSource,
-  edgeLabels: string[],
-  config: SchemaConfig,
-  edgeCounts: SchemaCountData | null
-): Effect.Effect<Relationship[], GremlinQueryError> =>
-  Effect.gen(function* () {
-    const batchSize = config.batchSize || DEFAULT_BATCH_SIZE;
-
-    yield* Effect.logInfo(
-      `Analyzing ${edgeLabels.length} edge labels with batch size ${batchSize}`
-    );
-
-    return yield* processBatched(edgeLabels, batchSize, (edgeLabel: string) =>
-      analyzeEdgePropertiesBatched(g, edgeLabel, config, edgeCounts)
-    );
-  });
-
-/**
- * Analyze edge properties for a given label using batched queries
- */
-const analyzeEdgePropertiesBatched = (
-  g: GraphTraversalSource,
-  edgeLabel: string,
-  config: SchemaConfig,
-  edgeCounts: SchemaCountData | null
-): Effect.Effect<Relationship, GremlinQueryError> =>
-  Effect.gen(function* () {
-    const propertyAnalysis = yield* batchAnalyzeEdgeProperties(g, edgeLabel, config);
-    const count = config.includeCounts
-      ? (edgeCounts as SchemaCountData)?.value?.[edgeLabel] || 0
-      : undefined;
-
-    return {
-      type: edgeLabel,
-      properties: propertyAnalysis,
-      ...(count !== undefined && { count }),
-    };
-  });
-
-/**
- * Batch analyze vertex properties using streams for property processing
- */
-const batchAnalyzeVertexProperties = (
-  g: GraphTraversalSource,
-  vertexLabel: string,
-  config: SchemaConfig
-): Effect.Effect<Property[], GremlinQueryError> =>
-  Effect.gen(function* () {
-    // Get all property keys first
-    const propertyKeys = yield* Effect.tryPromise({
-      try: () => g.V().hasLabel(vertexLabel).limit(100).properties().key().dedup().toList(),
-      catch: (error: unknown) =>
-        Errors.query(
-          `Failed to get properties for vertex ${vertexLabel}`,
-          `g.V().hasLabel('${vertexLabel}').limit(100).properties().key().dedup().toList()`,
-          { error }
-        ),
-    });
-
-    const keyList = propertyKeys as string[];
-
-    // Process properties with controlled concurrency
-    return yield* Effect.all(
-      keyList.map(key => batchAnalyzeSingleProperty(g, vertexLabel, key, config, true)),
-      { concurrency: 5 }
-    );
-  });
-
-/**
- * Batch analyze edge properties using streams for property processing
- */
-const batchAnalyzeEdgeProperties = (
-  g: GraphTraversalSource,
-  edgeLabel: string,
-  config: SchemaConfig
-): Effect.Effect<Property[], GremlinQueryError> =>
-  Effect.gen(function* () {
-    // Get all property keys first
-    const propertyKeys = yield* Effect.tryPromise({
-      try: () => g.E().hasLabel(edgeLabel).limit(100).properties().key().dedup().toList(),
-      catch: (error: unknown) =>
-        Errors.query(
-          `Failed to get properties for edge ${edgeLabel}`,
-          `g.E().hasLabel('${edgeLabel}').limit(100).properties().key().dedup().toList()`,
-          { error }
-        ),
-    });
-
-    const keyList = propertyKeys as string[];
-
-    // Process properties with controlled concurrency
-    return yield* Effect.all(
-      keyList.map(key => batchAnalyzeSingleProperty(g, edgeLabel, key, config, false)),
-      { concurrency: 5 }
-    );
-  });
-
-/**
- * Batch analyze a single property with optimized queries
- */
-const batchAnalyzeSingleProperty = (
-  g: GraphTraversalSource,
-  elementLabel: string,
-  propertyKey: string,
-  config: SchemaConfig,
-  isVertex: boolean
-): Effect.Effect<Property, GremlinQueryError> =>
-  Effect.gen(function* () {
-    // Skip blacklisted properties
-    if (config.enumPropertyBlacklist.includes(propertyKey)) {
-      return {
-        name: propertyKey,
-        type: ['unknown'],
-      };
-    }
-
-    const traversal = isVertex ? g.V().hasLabel(elementLabel) : g.E().hasLabel(elementLabel);
-
-    // Get sample values to determine types
-    const sampleValues = yield* Effect.tryPromise({
-      try: () =>
-        traversal
-          .limit(50)
-          .values(propertyKey)
-          .dedup()
-          .limit(config.maxEnumValues + 1)
-          .toList(),
-      catch: (error: unknown) =>
-        Errors.query(
-          `Failed to get values for property ${propertyKey}`,
-          `g.${isVertex ? 'V' : 'E'}().hasLabel('${elementLabel}').limit(50).values('${propertyKey}').dedup().limit(${config.maxEnumValues + 1}).toList()`,
-          { error }
-        ),
-    });
-
-    const valueList = sampleValues as unknown[];
-    return analyzePropertyFromValues(propertyKey, valueList, config);
-  });
-
-/**
- * Analyze property from collected values
- */
-const analyzePropertyFromValues = (
-  propertyKey: string,
-  values: unknown[],
-  config: SchemaConfig
-) => {
-  // Skip blacklisted properties
-  if (config.enumPropertyBlacklist.includes(propertyKey)) {
-    return {
-      name: propertyKey,
-      type: ['unknown'],
-    };
-  }
-
-  // Deduplicate and limit values
-  const uniqueValues = Array.from(new Set(values)).slice(0, config.maxEnumValues + 1);
-
-  // Determine types from sample values
-  const types = Array.from(new Set(uniqueValues.map((val: unknown) => typeof val).filter(Boolean)));
-
-  const property: Property = {
-    name: propertyKey,
-    type: types.length > 0 ? types : ['unknown'],
-  };
-
-  // Add sample values if requested
-  if (config.includeSampleValues && uniqueValues.length > 0) {
-    property.sample_values = uniqueValues.slice(0, 5);
-  }
-
-  // Determine if this should be treated as an enum
-  if (uniqueValues.length <= config.enumCardinalityThreshold && uniqueValues.length > 0) {
-    property.enum = uniqueValues;
-    property.cardinality = 'single';
-  }
-
-  return property;
-};
-
-/**
- * Generate relationship patterns with batched approach
- */
-const generateRelationshipPatterns = (g: GraphTraversalSource, edgeLabels: string[]) =>
-  Effect.gen(function* () {
-    yield* Effect.logInfo(`Generating relationship patterns for ${edgeLabels.length} edge labels`);
-
-    // Don't depend on edgeLabels parameter - generate directly from database
-    if (edgeLabels.length === 0) {
-      yield* Effect.logWarning(
-        'No edge labels provided, but generating relationship patterns directly from database'
-      );
-    }
-
-    // Get all patterns in a single query instead of per-label queries
-    const allPatterns = yield* Effect.tryPromise({
-      try: () =>
-        g
-          .E()
-          .project('from', 'to', 'label')
-          .by(outV().label())
-          .by(inV().label())
-          .by(label())
-          .dedup()
-          .limit(1000) // Increased limit since we're doing one query
-          .toList(),
-      catch: (error: unknown) =>
-        Errors.query(
-          'Failed to get relationship patterns',
-          `g.E().project('from', 'to', 'label').by(outV().label()).by(inV().label()).by(label()).dedup().limit(1000).toList()`,
-          { error }
-        ),
-    });
-
-    // Gremlin project() returns a Map-like object, need to extract properly
-    const resultList = (allPatterns as unknown[]).map((item: unknown) => {
-      // Handle both Map and plain object formats
-      if (item instanceof Map) {
-        return {
-          from: item.get('from'),
-          to: item.get('to'),
-          label: item.get('label'),
-        };
-      } else if (item && typeof item === 'object') {
-        const obj = item as Record<string, unknown>;
-        return {
-          from: obj['from'],
-          to: obj['to'],
-          label: obj['label'],
-        };
-      }
-      return { from: null, to: null, label: null };
-    });
-
-    yield* Effect.logInfo(`Retrieved ${resultList.length} raw patterns from database`);
-
-    const filteredPatterns = resultList
-      .filter(
-        (result: { from: unknown; to: unknown; label: unknown }) =>
-          result.from &&
-          result.to &&
-          result.label &&
-          typeof result.from === 'string' &&
-          typeof result.to === 'string' &&
-          typeof result.label === 'string'
-      )
-      .map((result: { from: string; to: string; label: string }) => ({
-        left_node: result.from,
-        right_node: result.to,
-        relation: result.label,
-      }));
-
-    yield* Effect.logInfo(`Filtered to ${filteredPatterns.length} valid patterns`);
-
-    return filteredPatterns;
   });

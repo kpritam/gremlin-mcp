@@ -7,7 +7,7 @@
  */
 
 import { Effect } from 'effect';
-import { type ImportDataInput, type ExportSubgraphInput } from '../gremlin/models.js';
+import { type ImportDataInput, type ExportSubgraphInput } from '../gremlin/models/index.js';
 import { GremlinService } from '../gremlin/service.js';
 import {
   Errors,

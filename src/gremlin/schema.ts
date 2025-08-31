@@ -7,7 +7,7 @@ import {
   peekCachedSchema,
   refreshSchemaCache,
 } from './schema-cache.js';
-import type { GraphSchema } from './models.js';
+import type { GraphSchema } from './models/index.js';
 import { GremlinClient } from './client.js';
 import { AppConfig } from '../config.js';
 import type { GremlinConnectionError, GremlinQueryError } from '../errors.js';

@@ -7,14 +7,12 @@
  */
 
 import { Effect, Context, Layer, pipe } from 'effect';
-import { type GremlinQueryResult, GremlinQueryResultSchema } from './models.js';
+import { type GremlinQueryResult, GremlinQueryResultSchema } from './models/index.js';
 import { parseGremlinResultsWithMetadata } from '../utils/result-parser.js';
 import { isGremlinResult } from '../utils/type-guards.js';
 import { GremlinConnectionError, GremlinQueryError, Errors, ParseError } from '../errors.js';
 import { GremlinClient } from './client.js';
 import { SchemaService } from './schema.js';
-
-// Import proper types from gremlin package
 import type { GremlinClientType, GremlinResultSet } from './types.js';
 import type { GraphSchema, ServiceStatus } from './types.js';
 
@@ -146,14 +144,8 @@ const makeGremlinService = Effect.gen(function* () {
       Effect.andThen(parsedResults => validateQueryResult(query, parsedResults))
     );
 
-  /**
-   * Get status with proper ServiceStatus object format
-   */
   const getStatus = Effect.succeed({ status: 'connected' as const });
 
-  /**
-   * Health check with proper Effect error handling
-   */
   const healthCheck = Effect.succeed({
     healthy: true,
     details: 'Connected',

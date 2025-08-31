@@ -90,21 +90,11 @@ const parseCommaSeparatedList = (value: string): string[] =>
     .map(s => s.trim())
     .filter(s => s.length > 0);
 
-/**
- * Effect Config definitions for all environment variables.
- * Each config object documents its environment variable, type, default, and validation logic.
- */
-/**
- * GREMLIN_ENDPOINT: string, required. Format: host:port or host:port/traversal_source
- */
 const GremlinEndpointConfig = pipe(
   Config.string('GREMLIN_ENDPOINT'),
   Config.mapOrFail(parseEndpoint)
 );
 
-/**
- * GREMLIN_USE_SSL: boolean, default: false.
- */
 const GremlinUseSslConfig = Config.withDefault(Config.boolean('GREMLIN_USE_SSL'), DEFAULTS.USE_SSL);
 
 /**

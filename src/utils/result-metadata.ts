@@ -3,7 +3,7 @@
  */
 
 import { Effect } from 'effect';
-import type { GremlinResultItem } from '../gremlin/models.js';
+import type { GremlinResultItem } from '../gremlin/models/index.js';
 
 export interface ResultMetadata {
   totalCount: number;

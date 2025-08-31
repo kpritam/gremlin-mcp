@@ -183,7 +183,7 @@ describe('Effect-based Configuration Management', () => {
     it('should provide meaningful error for invalid endpoint format', () => {
       process.env.GREMLIN_ENDPOINT = 'invalid-endpoint';
 
-      expect(() => Effect.runSync(AppConfig)).toThrow(/Invalid endpoint format/);
+      expect(() => Effect.runSync(AppConfig)).toThrow(/Invalid host:port format/);
     });
 
     it('should provide meaningful error for invalid port', () => {

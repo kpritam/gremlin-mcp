@@ -25,12 +25,9 @@ const SCHEMA_CACHE_TTL = Duration.minutes(5);
 export const createSchemaCache = () => Ref.make<Option.Option<SchemaCacheEntry>>(Option.none());
 
 /**
- * Checks if a cache entry is still valid based on its timestamp and the cache TTL.
- *
- * @param cacheEntry The schema cache entry to validate.
- * @returns `true` if the cache entry is still valid, `false` otherwise.
+ * Internal helper to check if cache entry is valid (not exported)
  */
-export const isCacheValid = (cacheEntry: SchemaCacheEntry): boolean => {
+const isCacheValid = (cacheEntry: SchemaCacheEntry): boolean => {
   const now = Date.now();
   const ttlMs = Duration.toMillis(SCHEMA_CACHE_TTL);
   return now - cacheEntry.timestamp < ttlMs;

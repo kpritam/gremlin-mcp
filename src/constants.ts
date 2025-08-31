@@ -6,8 +6,10 @@
  */
 
 // Server Information
-export const SERVER_NAME = 'gremlin-mcp';
-export const SERVER_VERSION = '0.0.11-SNAPSHOT';
+export const SERVER_INFO = {
+  NAME: 'gremlin-mcp',
+  VERSION: '0.0.11-SNAPSHOT',
+} as const;
 
 // MCP Resource URIs
 export const RESOURCE_URIS = {
@@ -30,15 +32,11 @@ export const DEFAULTS = {
   TRAVERSAL_SOURCE: 'g',
   USE_SSL: false,
   LOG_LEVEL: 'info' as const,
-  SERVER_NAME: 'gremlin-mcp',
-  SERVER_VERSION: '0.0.11-SNAPSHOT',
 } as const;
 
-// Connection Status Messages
+// Connection Status Messages (only used ones)
 export const STATUS_MESSAGES = {
   AVAILABLE: 'Available',
-  NOT_CONNECTED: 'Not Connected',
-  CONNECTION_ERROR: 'Connection Error',
 } as const;
 
 // MIME Types

@@ -21,20 +21,6 @@ export const ERROR_PREFIXES = {
   CONFIG: 'Configuration error',
   TIMEOUT: 'Operation timed out',
   PARSE: 'Parse error',
-  AUTH: 'Authentication error',
-} as const;
-
-/**
- * Operation context constants for consistent error messaging
- */
-export const OPERATION_CONTEXTS = {
-  SCHEMA_GENERATION: 'schema_generation',
-  QUERY_EXECUTION: 'query_execution',
-  CONNECTION_SETUP: 'connection_setup',
-  DATA_IMPORT: 'data_import',
-  DATA_EXPORT: 'data_export',
-  RESOURCE_ACCESS: 'resource_access',
-  TOOL_EXECUTION: 'tool_execution',
 } as const;
 
 /**
@@ -101,14 +87,6 @@ export class ParseError extends Data.TaggedError('ParseError')<{
 }> {}
 
 /**
- * Authentication/authorization errors
- */
-export class AuthError extends Data.TaggedError('AuthError')<{
-  readonly message: string;
-  readonly details?: unknown;
-}> {}
-
-/**
  * Union type for all possible Gremlin MCP errors
  */
 export type GremlinMcpError =
@@ -118,8 +96,7 @@ export type GremlinMcpError =
   | SchemaError
   | TimeoutError
   | ResourceError
-  | ParseError
-  | AuthError;
+  | ParseError;
 
 /**
  * Helper functions for creating common errors with standardized messaging
@@ -173,40 +150,4 @@ export const Errors = {
       input,
       details,
     }),
-
-  auth: (message: string, details?: unknown) =>
-    new AuthError({
-      message: `${ERROR_PREFIXES.AUTH}: ${message}`,
-      details,
-    }),
 } as const;
-
-/**
- * Helper function to convert Error objects to GremlinMcpError with consistent formatting
- */
-export const fromError = (error: Error | unknown, context?: string): GremlinMcpError => {
-  const message = error instanceof Error ? error.message : String(error);
-  const finalMessage = context ? `${context}: ${message}` : message;
-
-  return new ResourceError({
-    message: `${ERROR_PREFIXES.RESOURCE}: ${finalMessage}`,
-    details:
-      error instanceof Error ? { name: error.name, stack: error.stack } : { originalError: error },
-  });
-};
-
-/**
- * Type guard to check if an error is a GremlinMcpError
- */
-export const isGremlinMcpError = (error: unknown): error is GremlinMcpError => {
-  return (
-    error instanceof ConfigError ||
-    error instanceof GremlinConnectionError ||
-    error instanceof GremlinQueryError ||
-    error instanceof SchemaError ||
-    error instanceof TimeoutError ||
-    error instanceof ResourceError ||
-    error instanceof ParseError ||
-    error instanceof AuthError
-  );
-};

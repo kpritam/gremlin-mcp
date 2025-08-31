@@ -17,7 +17,7 @@
  */
 
 import { Config, ConfigError, Effect, Either, pipe } from 'effect';
-import { DEFAULTS } from './constants.js';
+import { DEFAULTS, SERVER_INFO } from './constants.js';
 
 /**
  * Parses and validates a Gremlin endpoint string.
@@ -236,8 +236,8 @@ const SchemaDiscoveryConfig = Config.all({
  * ServerConfig: Immutable server name and version from constants.ts
  */
 const ServerConfig = Config.succeed({
-  name: DEFAULTS.SERVER_NAME,
-  version: DEFAULTS.SERVER_VERSION,
+  name: SERVER_INFO.NAME,
+  version: SERVER_INFO.VERSION,
 } as const);
 
 /**

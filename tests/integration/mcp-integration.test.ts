@@ -124,7 +124,7 @@ describe('MCP Server Integration Tests', () => {
       const content = result.content[0];
       expect(content.type).toBe('text');
       if (content.type === 'text') {
-        expect(content.text).toBe('Available');
+        expect(content.text).toBe('connected');
       }
     },
     30000

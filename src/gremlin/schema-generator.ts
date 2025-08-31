@@ -229,8 +229,8 @@ const buildSchemaData = (
     },
   };
 
-  return Effect.tryPromise({
-    try: () => Promise.resolve(GraphSchemaSchema.parse(schemaData)),
+  return Effect.try({
+    try: () => GraphSchemaSchema.parse(schemaData),
     catch: (error: unknown) => {
       console.error('Schema validation error:', error);
       console.error('Schema data that failed:', JSON.stringify(schemaData, null, 2));

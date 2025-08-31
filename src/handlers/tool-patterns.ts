@@ -48,21 +48,58 @@ export const createErrorResponse = (message: string): McpToolResponse => ({
 });
 
 /**
+ * Extract error message from various error types
+ */
+const extractErrorMessage = (error: unknown): string => {
+  if (error && typeof error === 'object') {
+    if ('message' in error && typeof error.message === 'string') {
+      return error.message;
+    }
+    if ('left' in error && typeof error.left === 'object' && error.left) {
+      if ('message' in error.left && typeof error.left.message === 'string') {
+        return error.left.message;
+      }
+    }
+  }
+  return String(error);
+};
+
+/**
  * Formats error response with standardized messaging
  */
 export const formatErrorResponse = (error: unknown, operation: string): McpToolResponse => {
-  const message = error instanceof Error ? error.message : String(error);
+  const message = extractErrorMessage(error);
   return createErrorResponse(`${operation}: ${message}`);
 };
 
 /**
- * Formats operation result error with consistent messaging
+ * Common handler execution logic with proper error handling
  */
-export const formatOperationError = (
-  result: { left: { message: string } },
-  operation: string
-): McpToolResponse => {
-  return createErrorResponse(`${operation}: ${result.left.message}`);
+const executeHandler = async <TInput, TOutput>(
+  bridge: EffectMcpBridge<GremlinService>,
+  handler: ToolHandler<TInput, TOutput>,
+  input: TInput,
+  operationName: string,
+  useStringResponse = false
+): Promise<McpToolResponse> => {
+  const result = await bridge.runEffect(
+    pipe(
+      GremlinService,
+      Effect.flatMap(service => handler(service, input)),
+      Effect.either
+    )
+  );
+
+  if (result._tag === 'Left') {
+    return formatErrorResponse(result.left, operationName);
+  }
+
+  // Use string response for simple string results to avoid double JSON encoding
+  if (useStringResponse && typeof result.right === 'string') {
+    return createStringResponse(result.right);
+  }
+
+  return createSuccessResponse(result.right);
 };
 
 /**
@@ -81,57 +118,12 @@ export const createToolHandler = <TInput, TOutput>(
       // Validate input
       const validatedInput = inputSchema.parse(args);
 
-      // Execute handler with Effect
-      const result = await bridge.runEffect(
-        pipe(
-          GremlinService,
-          Effect.flatMap(service => handler(service, validatedInput)),
-          Effect.either
-        )
-      );
-
-      // Handle result
-      if (result._tag === 'Left') {
-        const errorResult = result as { left: { message: string } };
-        return formatOperationError(errorResult, operationName);
-      }
-
-      return createSuccessResponse(result.right);
+      // Execute handler using common execution logic
+      return await executeHandler(bridge, handler, validatedInput, operationName);
     } catch (error) {
       return formatErrorResponse(error, operationName);
     }
   };
-};
-
-/**
- * Common handler execution logic to reduce code duplication
- */
-const executeHandler = async <TInput, TOutput>(
-  bridge: EffectMcpBridge<GremlinService>,
-  handler: ToolHandler<TInput, TOutput>,
-  input: TInput,
-  operationName: string,
-  useStringResponse = false
-): Promise<McpToolResponse> => {
-  const result = await bridge.runEffect(
-    pipe(
-      GremlinService,
-      Effect.flatMap(service => handler(service, input)),
-      Effect.either
-    )
-  );
-
-  if (result._tag === 'Left') {
-    const errorResult = result as { left: { message: string } };
-    return createErrorResponse(`${operationName}: ${errorResult.left.message}`);
-  }
-
-  // Use string response for simple string results to avoid double JSON encoding
-  if (useStringResponse && typeof result.right === 'string') {
-    return createStringResponse(result.right);
-  }
-
-  return createSuccessResponse(result.right);
 };
 
 /**
@@ -146,7 +138,7 @@ export const createSimpleToolHandler = <TOutput>(
     try {
       return await executeHandler(
         bridge,
-        service => handler(service),
+        (service: typeof GremlinService.Service) => handler(service),
         null as never,
         errorMessage,
         useStringResponse

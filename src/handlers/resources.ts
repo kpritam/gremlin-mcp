@@ -1,18 +1,18 @@
 /**
  * Effect-based MCP Resource handlers for Gremlin server.
- * Uses proper dependency injection instead of global runtime container.
+ * Uses proper dependency injection and improved error handling.
  */
 
 import { Effect, pipe } from 'effect';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { RESOURCE_URIS, MIME_TYPES } from '../constants.js';
-import { GremlinService } from '../gremlin/service.js';
 import { ERROR_PREFIXES } from '../errors.js';
 import { type EffectMcpBridge } from './effect-runtime-bridge.js';
+import { GremlinService } from '../gremlin/service.js';
 
 /**
  * Register Effect-based resource handlers with the MCP server.
- * Uses dependency-injected runtime instead of global container.
+ * Improved with better error handling and Effect composition patterns.
  */
 export function registerEffectResourceHandlers(
   server: McpServer,

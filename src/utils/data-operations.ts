@@ -58,13 +58,13 @@ export const exportSubgraph = (
 
     switch (input.format) {
       case 'graphson':
-        return yield* exportToGraphSON(queryResult.results, input);
+        return yield* exportToGraphSON(queryResult.results);
 
       case 'json':
         return yield* exportToJSON(queryResult.results, input);
 
       case 'csv':
-        return yield* exportToCSV(queryResult.results, input);
+        return yield* exportToCSV(queryResult.results);
 
       default:
         return yield* Effect.fail(
@@ -125,6 +125,17 @@ const buildImportSummary = (vertexCount: number, edgeCount: number): string =>
   `GraphSON import completed successfully. Vertices: ${vertexCount}, Edges: ${edgeCount}`;
 
 /**
+ * Parse GraphSON data with proper error handling
+ */
+const parseGraphSONData = (
+  input: string
+): Effect.Effect<{ vertices?: unknown[]; edges?: unknown[] }, ResourceError> =>
+  Effect.try({
+    try: () => JSON.parse(input) as { vertices?: unknown[]; edges?: unknown[] },
+    catch: error => Errors.resource('Failed to parse GraphSON data', 'graphson_import', error),
+  });
+
+/**
  * Import GraphSON format data
  */
 const importGraphSON = (
@@ -132,33 +143,55 @@ const importGraphSON = (
   input: ImportDataInput
 ): Effect.Effect<string, ResourceError | GremlinConnectionError | GremlinQueryError> =>
   Effect.gen(function* () {
-    const data = yield* Effect.tryPromise({
-      try: () => Promise.resolve(JSON.parse(input.data)),
-      catch: error => Errors.resource('Failed to parse GraphSON data', 'graphson_import', error),
-    });
+    const data = yield* parseGraphSONData(input.data);
 
     yield* clearGraphIfRequested(service, input.options?.clear_graph);
 
-    if (data.vertices) {
+    const vertexCount = data.vertices?.length || 0;
+    const edgeCount = data.edges?.length || 0;
+
+    if (data.vertices && vertexCount > 0) {
       yield* importVertices(service, data.vertices);
     }
 
-    if (data.edges) {
+    if (data.edges && edgeCount > 0) {
       yield* importEdges(service, data.edges);
     }
 
-    return buildImportSummary(data.vertices?.length || 0, data.edges?.length || 0);
+    return buildImportSummary(vertexCount, edgeCount);
   });
 
 /**
- * Parse CSV data into headers and rows
+ * Parse CSV data safely
  */
-const parseCSVData = (csvData: string): { headers: string[]; dataRows: string[] } => {
-  const lines = csvData.split('\n').filter(line => line.trim());
-  const headers = lines[0]?.split(',').map(h => h.trim()) || [];
-  const dataRows = lines.slice(1);
-  return { headers, dataRows };
-};
+const parseCSVData = (
+  csvData: string
+): Effect.Effect<{ headers: string[]; dataRows: string[] }, ResourceError> =>
+  Effect.try({
+    try: () => {
+      const lines = csvData.split('\n').filter(line => line.trim());
+      const headers = lines[0]?.split(',').map(h => h.trim()) || [];
+      const dataRows = lines.slice(1);
+      return { headers, dataRows };
+    },
+    catch: error => Errors.resource('Failed to parse CSV data', 'csv_import', error),
+  });
+
+/**
+ * Import CSV format data
+ */
+const importCSV = (
+  service: typeof GremlinService.Service,
+  input: ImportDataInput
+): Effect.Effect<string, ResourceError | GremlinConnectionError | GremlinQueryError> =>
+  Effect.gen(function* () {
+    const { headers, dataRows } = yield* parseCSVData(input.data);
+
+    yield* clearGraphIfRequested(service, input.options?.clear_graph);
+    yield* importCSVVertices(service, dataRows, headers);
+
+    return `CSV import completed successfully. Processed ${dataRows.length} rows.`;
+  });
 
 /**
  * Process a single CSV row into vertex properties
@@ -191,51 +224,54 @@ const importCSVVertices = (
   });
 
 /**
- * Import CSV format data
- */
-const importCSV = (
-  service: typeof GremlinService.Service,
-  input: ImportDataInput
-): Effect.Effect<string, ResourceError | GremlinConnectionError | GremlinQueryError> =>
-  Effect.gen(function* () {
-    const { headers, dataRows } = yield* Effect.tryPromise({
-      try: () => Promise.resolve(parseCSVData(input.data)),
-      catch: error => Errors.resource('Failed to parse CSV data', 'csv_import', error),
-    });
-
-    yield* clearGraphIfRequested(service, input.options?.clear_graph);
-    yield* importCSVVertices(service, dataRows, headers);
-
-    return `CSV import completed successfully. Processed ${dataRows.length} rows.`;
-  });
-
-/**
  * Export to GraphSON format
  */
-const exportToGraphSON = (
-  results: unknown[],
-  _input: ExportSubgraphInput
-): Effect.Effect<string, ResourceError | GremlinConnectionError | GremlinQueryError> =>
+const exportToGraphSON = (results: unknown[]): Effect.Effect<string, ResourceError> =>
   Effect.gen(function* () {
-    const graphsonData = yield* Effect.tryPromise({
-      try: () =>
-        Promise.resolve({
-          vertices: results.filter(
-            r => typeof r === 'object' && r !== null && 'type' in r && r.type === 'vertex'
-          ),
-          edges: results.filter(
-            r => typeof r === 'object' && r !== null && 'type' in r && r.type === 'edge'
-          ),
-        }),
-      catch: error => Errors.resource('Failed to process GraphSON data', 'graphson_export', error),
-    });
+    const graphsonData = {
+      vertices: results.filter(
+        r => typeof r === 'object' && r !== null && 'type' in r && r.type === 'vertex'
+      ),
+      edges: results.filter(
+        r => typeof r === 'object' && r !== null && 'type' in r && r.type === 'edge'
+      ),
+    };
 
-    return yield* Effect.tryPromise({
-      try: () => Promise.resolve(JSON.stringify(graphsonData, null, 2)),
+    return yield* Effect.try({
+      try: () => JSON.stringify(graphsonData, null, 2),
       catch: error =>
         Errors.resource('Failed to serialize GraphSON data', 'graphson_export', error),
     });
   });
+
+/**
+ * Apply property filters to results
+ */
+const applyPropertyFilters = (result: unknown, input: ExportSubgraphInput): unknown => {
+  if (typeof result !== 'object' || result === null || !isRecord(result)) {
+    return result;
+  }
+
+  if (input.include_properties) {
+    const filtered: Record<string, unknown> = {};
+    input.include_properties.forEach(prop => {
+      if (prop in result) {
+        filtered[prop] = result[prop];
+      }
+    });
+    return filtered;
+  }
+
+  if (input.exclude_properties) {
+    const filtered = { ...result };
+    input.exclude_properties.forEach(prop => {
+      delete filtered[prop];
+    });
+    return filtered;
+  }
+
+  return result;
+};
 
 /**
  * Export to JSON format
@@ -243,20 +279,15 @@ const exportToGraphSON = (
 const exportToJSON = (
   results: unknown[],
   input: ExportSubgraphInput
-): Effect.Effect<string, ResourceError | GremlinConnectionError | GremlinQueryError> =>
+): Effect.Effect<string, ResourceError> =>
   Effect.gen(function* () {
-    const filteredResults = yield* Effect.tryPromise({
-      try: () =>
-        Promise.resolve(
-          input.include_properties || input.exclude_properties
-            ? results.map(result => filterProperties(result, input))
-            : results
-        ),
-      catch: error => Errors.resource('Failed to filter JSON data', 'json_export', error),
-    });
+    const filteredResults =
+      input.include_properties || input.exclude_properties
+        ? results.map(result => applyPropertyFilters(result, input))
+        : results;
 
-    return yield* Effect.tryPromise({
-      try: () => Promise.resolve(JSON.stringify(filteredResults, null, 2)),
+    return yield* Effect.try({
+      try: () => JSON.stringify(filteredResults, null, 2),
       catch: error => Errors.resource('Failed to serialize JSON data', 'json_export', error),
     });
   });
@@ -264,47 +295,39 @@ const exportToJSON = (
 /**
  * Export to CSV format
  */
-const exportToCSV = (
-  results: unknown[],
-  _input: ExportSubgraphInput
-): Effect.Effect<string, ResourceError | GremlinConnectionError | GremlinQueryError> =>
+const exportToCSV = (results: unknown[]): Effect.Effect<string, ResourceError> =>
   Effect.gen(function* () {
     if (results.length === 0) {
       return '';
     }
 
-    const csvData = yield* Effect.tryPromise({
-      try: () =>
-        Promise.resolve(
-          (() => {
-            // Extract all unique property keys
-            const allKeys = new Set<string>();
-            results.forEach(result => {
-              if (typeof result === 'object' && result !== null) {
-                Object.keys(result).forEach(key => allKeys.add(key));
-              }
+    return yield* Effect.try({
+      try: () => {
+        // Extract all unique property keys
+        const allKeys = new Set<string>();
+        results.forEach(result => {
+          if (typeof result === 'object' && result !== null) {
+            Object.keys(result).forEach(key => allKeys.add(key));
+          }
+        });
+
+        const headers = Array.from(allKeys);
+        const csvLines = [headers.join(',')];
+
+        results.forEach(result => {
+          if (isRecord(result)) {
+            const row = headers.map(header => {
+              const value = result[header];
+              return value !== undefined ? String(value) : '';
             });
+            csvLines.push(row.join(','));
+          }
+        });
 
-            const headers = Array.from(allKeys);
-            const csvLines = [headers.join(',')];
-
-            results.forEach(result => {
-              if (isRecord(result)) {
-                const row = headers.map(header => {
-                  const value = result[header];
-                  return value !== undefined ? String(value) : '';
-                });
-                csvLines.push(row.join(','));
-              }
-            });
-
-            return csvLines.join('\n');
-          })()
-        ),
+        return csvLines.join('\n');
+      },
       catch: error => Errors.resource('Failed to process CSV data', 'csv_export', error),
     });
-
-    return csvData;
   });
 
 /**
@@ -360,34 +383,4 @@ function buildCSVVertexInsertQuery(properties: Record<string, string>): string {
   }
 
   return query;
-}
-
-function filterProperties(result: unknown, input: ExportSubgraphInput): unknown {
-  if (typeof result !== 'object' || result === null) {
-    return result;
-  }
-
-  if (!isRecord(result)) {
-    return result;
-  }
-
-  if (input.include_properties) {
-    const filtered: Record<string, unknown> = {};
-    input.include_properties.forEach(prop => {
-      if (prop in result) {
-        filtered[prop] = result[prop];
-      }
-    });
-    return filtered;
-  }
-
-  if (input.exclude_properties) {
-    const filtered = { ...result };
-    input.exclude_properties.forEach(prop => {
-      delete filtered[prop];
-    });
-    return filtered;
-  }
-
-  return result;
 }

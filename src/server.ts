@@ -70,13 +70,12 @@ const makeMcpServerService = Effect.gen(function* () {
 
       yield* pipe(
         Effect.tryPromise(() => server.connect(transport)),
-        Effect.mapError(error => {
-          const serverError = Errors.resource('Server connection failed', 'connection', {
+        Effect.mapError(error =>
+          Errors.connection('Server connection failed', {
             error_type: error instanceof Error ? error.constructor.name : typeof error,
             error_message: error instanceof Error ? error.message : String(error),
-          });
-          return new Error(serverError.message);
-        })
+          })
+        )
       );
 
       yield* Effect.logInfo('✅ Gremlin MCP Server started successfully', {
@@ -128,19 +127,34 @@ const program = Effect.gen(function* () {
 });
 
 /**
- * Safely serialize log data to JSON
+ * Safely serialize log data to JSON with better error handling
  */
-const safeJsonStringify = (obj: unknown): string => {
-  try {
-    return JSON.stringify(obj, null, 2);
-  } catch {
-    return JSON.stringify({
-      message: String(obj),
-      serialization_error: true,
+const safeJsonStringify = (obj: unknown): string =>
+  pipe(
+    Effect.try(() => JSON.stringify(obj, null, 2)),
+    Effect.catchAll(() =>
+      Effect.succeed(
+        JSON.stringify({
+          message: String(obj),
+          serialization_error: true,
+          timestamp: new Date().toISOString(),
+        })
+      )
+    ),
+    Effect.runSync
+  );
+
+/**
+ * Effect-based structured logging that always writes to stderr
+ */
+const logToStderr = (logData: Record<string, unknown>): Effect.Effect<void> =>
+  Effect.sync(() => {
+    const logEntry = {
+      ...logData,
       timestamp: new Date().toISOString(),
-    });
-  }
-};
+    };
+    process.stderr.write(`${safeJsonStringify(logEntry)}\n`);
+  });
 
 /**
  * Enhanced logging configuration based on config
@@ -168,10 +182,8 @@ const createLoggerLayer = (config: AppConfigType) => {
               ([key]) => !key.startsWith('_') && key !== 'span' && key !== 'fiber'
             )
           ),
-          timestamp: new Date().toISOString(),
         };
-        process.stderr.write(`${safeJsonStringify(logData)}\n`);
-        return Effect.succeed(void 0);
+        return logToStderr(logData);
       })
     ),
     Logger.minimumLogLevel(logLevel)
@@ -179,31 +191,36 @@ const createLoggerLayer = (config: AppConfigType) => {
 };
 
 /**
- * Effect-based signal handling
+ * Effect-based graceful shutdown using Effect's interruption system
  */
 const withGracefulShutdown = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
   Effect.gen(function* () {
     const fiber = yield* Effect.fork(effect);
 
-    // Set up signal handlers
-    const handleSignal = (signal: string) => {
-      Effect.runPromise(
-        Effect.gen(function* () {
-          yield* Effect.logInfo(`Received ${signal}. Shutting down gracefully...`);
-          yield* Fiber.interrupt(fiber);
-        })
-      )
-        .then(() => {
-          process.exit(0);
-        })
-        .catch(error => {
-          console.error('Error during shutdown:', error);
-          process.exit(1);
+    // Set up signal handlers using Effect's interruption
+    const setupSignalHandler = (signal: NodeJS.Signals) =>
+      Effect.sync(() => {
+        process.on(signal, () => {
+          Effect.runPromise(
+            pipe(
+              Effect.logInfo(`Received ${signal}. Initiating graceful shutdown...`),
+              Effect.andThen(() => Fiber.interrupt(fiber)),
+              Effect.catchAll((error: unknown) =>
+                logToStderr({
+                  level: 'error',
+                  message: 'Error during shutdown',
+                  error: error instanceof Error ? error.message : String(error),
+                })
+              )
+            )
+          ).finally(() => {
+            process.exit(0);
+          });
         });
-    };
+      });
 
-    process.on('SIGINT', () => handleSignal('SIGINT'));
-    process.on('SIGTERM', () => handleSignal('SIGTERM'));
+    yield* setupSignalHandler('SIGINT');
+    yield* setupSignalHandler('SIGTERM');
 
     return yield* Fiber.join(fiber);
   });
@@ -213,7 +230,7 @@ const withGracefulShutdown = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.E
  */
 const main = Effect.gen(function* () {
   // Add startup logging before anything else - CRITICAL: Use stderr only
-  const startupInfo = {
+  yield* logToStderr({
     level: 'info',
     message: 'Gremlin MCP Server executable started',
     process_info: {
@@ -223,15 +240,13 @@ const main = Effect.gen(function* () {
       argv: process.argv,
       cwd: process.cwd(),
     },
-    timestamp: new Date().toISOString(),
-  };
-  process.stderr.write(`${JSON.stringify(startupInfo)}\n`);
+  });
 
   // Get configuration early for logging setup
   const config = yield* AppConfig;
 
   // Log configuration
-  const configInfo = {
+  yield* logToStderr({
     level: 'info',
     message: 'Configuration loaded',
     config: {
@@ -246,9 +261,7 @@ const main = Effect.gen(function* () {
         level: config.logging.level,
       },
     },
-    timestamp: new Date().toISOString(),
-  };
-  process.stderr.write(`${JSON.stringify(configInfo)}\n`);
+  });
 
   // Run the main program with all services provided
   yield* pipe(
@@ -259,29 +272,30 @@ const main = Effect.gen(function* () {
 });
 
 /**
- * Run the application with better error handling
+ * Run the application with improved error handling using Effect patterns
  */
 const runMain = pipe(
   Effect.scoped(main),
   Effect.catchAll((error: unknown) =>
-    Effect.sync(() => {
-      const errorData = {
-        level: 'error',
-        message: 'Fatal error in main program',
-        error: error instanceof Error ? error.message : String(error),
-        error_type: error instanceof Error ? error.constructor.name : typeof error,
-        stack: error instanceof Error ? error.stack : undefined,
-        timestamp: new Date().toISOString(),
-      };
-      process.stderr.write(`${JSON.stringify(errorData)}\n`);
-      process.exit(1);
-    })
+    logToStderr({
+      level: 'error',
+      message: 'Fatal error in main program',
+      error: error instanceof Error ? error.message : String(error),
+      error_type: error instanceof Error ? error.constructor.name : typeof error,
+      stack: error instanceof Error ? error.stack : undefined,
+    }).pipe(Effect.andThen(() => Effect.sync(() => process.exit(1))))
   )
 );
 
 Effect.runPromiseExit(runMain).then(exit => {
   if (exit._tag === 'Failure') {
-    console.error('❌ Fatal error:', exit.cause);
+    const errorData = {
+      level: 'error',
+      message: '❌ Fatal error during application execution',
+      cause: String(exit.cause),
+      timestamp: new Date().toISOString(),
+    };
+    process.stderr.write(`${safeJsonStringify(errorData)}\n`);
     process.exit(1);
   }
 });

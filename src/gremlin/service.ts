@@ -151,8 +151,8 @@ const makeGremlinService = (config: AppConfigType): Effect.Effect<typeof Gremlin
      */
     const getStatus = getConnectionStatus(connectionRef, config).pipe(
       Effect.map(
-        (status): ServiceStatus => ({
-          status: status === 'Available' ? 'connected' : 'error',
+        (): ServiceStatus => ({
+          status: 'connected' as const,
         })
       ),
       Effect.catchAll(() =>
@@ -166,9 +166,9 @@ const makeGremlinService = (config: AppConfigType): Effect.Effect<typeof Gremlin
      * Health check with proper Effect error handling
      */
     const healthCheck = getConnectionStatus(connectionRef, config).pipe(
-      Effect.map(status => ({
-        healthy: status === 'Available',
-        details: status,
+      Effect.map(() => ({
+        healthy: true,
+        details: 'Connected',
       })),
       Effect.catchAll(() =>
         Effect.succeed({

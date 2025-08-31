@@ -1,7 +1,9 @@
 /**
- * Effect-based Gremlin Service for graph operations.
- * Uses modern Effect.ts patterns for service definition and dependency injection.
- * Refactored into modular components for better maintainability.
+ * @fileoverview Effect-based Gremlin service for graph database operations.
+ *
+ * Provides a modular, composable service layer for Gremlin graph databases using
+ * Effect-ts patterns. Handles connection management, schema caching, query execution,
+ * and error handling.
  */
 
 import { Effect, Ref, Option, Context, Layer, pipe } from 'effect';
@@ -26,7 +28,15 @@ import {
 import { generateGraphSchema, DEFAULT_SCHEMA_CONFIG } from './schema-generator.js';
 
 /**
- * Gremlin Service using modern Effect.ts Context.Tag pattern
+ * Gremlin service using Effect Context.Tag pattern.
+ *
+ * Provides graph database operations including:
+ * - Connection status monitoring
+ * - Schema introspection and caching
+ * - Query execution with result parsing
+ * - Health check capabilities
+ *
+ * All operations return Effect types for composable error handling.
  */
 export class GremlinService extends Context.Tag('GremlinService')<
   GremlinService,
@@ -46,7 +56,16 @@ export class GremlinService extends Context.Tag('GremlinService')<
 >() {}
 
 /**
- * Implementation of the Gremlin Service using extracted modules
+ * Creates the Gremlin service implementation with dependency injection.
+ *
+ * @param config - Application configuration containing Gremlin connection settings
+ * @returns Effect providing the complete service implementation
+ *
+ * The service implementation manages:
+ * - Connection state through a Ref for safe concurrent access
+ * - Schema cache with automatic generation and refresh capabilities
+ * - Query execution with result transformation and validation
+ * - Health monitoring and status reporting
  */
 const makeGremlinService = (config: AppConfigType): Effect.Effect<typeof GremlinService.Service> =>
   Effect.gen(function* () {
@@ -63,7 +82,11 @@ const makeGremlinService = (config: AppConfigType): Effect.Effect<typeof Gremlin
     });
 
     /**
-     * Execute raw query against Gremlin client
+     * Executes a raw Gremlin query against the client.
+     *
+     * @param query - Gremlin traversal query string
+     * @param client - Gremlin client instance
+     * @returns Effect with query results or execution error
      */
     const executeRawQuery = (
       query: string,
@@ -75,7 +98,16 @@ const makeGremlinService = (config: AppConfigType): Effect.Effect<typeof Gremlin
       );
 
     /**
-     * Process ResultSet into array format
+     * Processes Gremlin ResultSet into standard array format.
+     *
+     * @param resultSet - Raw result from Gremlin client
+     * @returns Array of result items
+     *
+     * Handles various result formats:
+     * - ResultSet objects with _items property
+     * - Objects with toArray() method
+     * - Direct arrays
+     * - Single values (wrapped in array)
      */
     const processResultSet = (resultSet: unknown): unknown[] => {
       // Handle ResultSet objects (with _items property)
@@ -95,7 +127,11 @@ const makeGremlinService = (config: AppConfigType): Effect.Effect<typeof Gremlin
     };
 
     /**
-     * Transform raw result set into parsed format
+     * Transforms raw result set into parsed GremlinQueryResult format.
+     *
+     * @param query - Original query string for error context
+     * @param resultSet - Raw result set from Gremlin
+     * @returns Effect with parsed results and metadata
      */
     const transformGremlinResult = (
       query: string,
@@ -114,7 +150,11 @@ const makeGremlinService = (config: AppConfigType): Effect.Effect<typeof Gremlin
       );
 
     /**
-     * Validate query result against schema
+     * Validates query result against the GremlinQueryResult schema.
+     *
+     * @param query - Original query string for error context
+     * @param result - Parsed result object
+     * @returns Effect with validated GremlinQueryResult
      */
     const validateQueryResult = (
       query: string,
@@ -126,7 +166,17 @@ const makeGremlinService = (config: AppConfigType): Effect.Effect<typeof Gremlin
       );
 
     /**
-     * Execute Gremlin query with proper error handling
+     * Executes a Gremlin query with comprehensive error handling.
+     *
+     * @param query - Gremlin traversal query string
+     * @returns Effect with parsed and validated query results
+     *
+     * Pipeline:
+     * 1. Ensures valid connection exists
+     * 2. Executes raw query against client
+     * 3. Validates result format
+     * 4. Transforms and parses results
+     * 5. Validates against schema
      */
     const executeQuery = (
       query: string
@@ -189,7 +239,10 @@ const makeGremlinService = (config: AppConfigType): Effect.Effect<typeof Gremlin
   });
 
 /**
- * Layer for creating the Gremlin Service
+ * Creates a layer providing the Gremlin service implementation.
+ *
+ * @param config - Application configuration with Gremlin settings
+ * @returns Effect layer for dependency injection
  */
 export const GremlinServiceLive = (config: AppConfigType) =>
   Layer.effect(GremlinService, makeGremlinService(config));

@@ -1,5 +1,8 @@
 /**
- * Application constants for the Gremlin MCP Server.
+ * @fileoverview Application constants and default values.
+ *
+ * Centralized location for all constant values used throughout the application
+ * including server metadata, MCP protocol identifiers, and configuration defaults.
  */
 
 // Server Information

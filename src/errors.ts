@@ -1,6 +1,9 @@
 /**
- * Effect-based error handling architecture for Gremlin MCP Server.
- * Provides typed error handling with Effect's error management system.
+ * @fileoverview Comprehensive error handling with typed error domains.
+ *
+ * Defines domain-specific error types using Effect's Data.TaggedError pattern
+ * for precise error handling and recovery strategies. Each error type includes
+ * contextual metadata for debugging and user-friendly error messages.
  */
 
 import { Data } from 'effect';

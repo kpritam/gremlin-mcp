@@ -1,30 +1,17 @@
 /**
- * Gremlin MCP Server configuration module.
+ * @fileoverview Application configuration with type-safe environment variable loading.
  *
- * - Loads and validates all environment variables required for Gremlin MCP Server operation.
- * - Uses Effect.Config for type-safe, effectful config parsing and validation
- * - Documents all environment variables, their types, defaults, and error handling strategies.
- * - Implements structured error handling via custom error ADTs and Effect.ConfigError.
- * - No hardcoded credentials; all secrets are loaded from environment variables.
- * - Follows KISS, YAGNI, and SOLID principles for maintainable, readable configuration logic.
+ * Provides comprehensive configuration management for the Gremlin MCP server using
+ * Effect.Config for validation and error handling. All configuration is loaded from
+ * environment variables with sensible defaults and detailed validation.
  *
- * ## Environment Variables
- * - GREMLIN_ENDPOINT: string, required. Format: host:port or host:port/traversal_source
- * - GREMLIN_USE_SSL: boolean, default: false. Accepts: true/false/1/0/t/f/yes/no/y/n
- * - GREMLIN_USERNAME: string, optional. Gremlin DB username
- * - GREMLIN_PASSWORD: string, optional, redacted. Gremlin DB password
- * - GREMLIN_IDLE_TIMEOUT: number, default: 300. Connection idle timeout (seconds)
- * - LOG_LEVEL: 'error' | 'warn' | 'info' | 'debug', default: info. Logging verbosity
- * - GREMLIN_ENUM_DISCOVERY_ENABLED: boolean, default: true. Enable enum property discovery
- * - GREMLIN_ENUM_CARDINALITY_THRESHOLD: number, default: 10. Max cardinality for enum detection
- * - GREMLIN_ENUM_PROPERTY_BLACKLIST: string, default: id,pk,name,description,... Comma-separated list of properties to exclude from enum detection
- * - GREMLIN_SCHEMA_INCLUDE_SAMPLE_VALUES: boolean, default: false. Include sample values in schema output
- * - GREMLIN_SCHEMA_MAX_ENUM_VALUES: number, default: 10. Max enum values per property (≤ 100)
- * - GREMLIN_SCHEMA_INCLUDE_COUNTS: boolean, default: true. Include property counts in schema output
- *
- * ## Error Handling
- * - All parsing and validation errors are surfaced as Effect.ConfigError or custom ADTs (ConfigParseError, EndpointParseError, ValidationError).
- * - Config objects use mapOrFail and validate for runtime checks; errors are descriptive and structured.
+ * @example Environment Variables
+ * ```bash
+ * GREMLIN_ENDPOINT=localhost:8182
+ * GREMLIN_USE_SSL=false
+ * LOG_LEVEL=info
+ * GREMLIN_ENUM_DISCOVERY_ENABLED=true
+ * ```
  */
 
 import { Config, ConfigError, Data, Effect, Either, pipe } from 'effect';

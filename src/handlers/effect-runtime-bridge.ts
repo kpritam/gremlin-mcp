@@ -1,44 +1,20 @@
 /**
- * Effect-to-MCP runtime bridge.
- * Provides a clean interface for running Effect programs within MCP SDK callbacks.
+ * Simplified Effect runtime utilities for MCP handlers.
+ * Uses direct Layer.toRuntime pattern instead of complex bridge abstractions.
  */
 
-import { Effect, ManagedRuntime } from 'effect';
+import { Effect, Layer, Runtime } from 'effect';
 
 /**
- * Creates a bridge between Effect runtime and MCP SDK callbacks
+ * Create a runtime from a layer for MCP handlers
  */
-export interface EffectMcpBridge<R> {
-  readonly runEffect: <A, E>(effect: Effect.Effect<A, E, R>) => Promise<A>;
-}
+export const createMcpRuntime = <R, E>(layer: Layer.Layer<R, E, never>) =>
+  Effect.scoped(Layer.toRuntime(layer));
 
 /**
- * Creates an Effect-to-MCP bridge with proper dependency injection
+ * Simple helper to run effects with a runtime and handle errors
  */
-export const createEffectMcpBridge = <R>(
-  runtime: ManagedRuntime.ManagedRuntime<R, never>
-): EffectMcpBridge<R> => ({
-  runEffect: <A, E>(effect: Effect.Effect<A, E, R>): Promise<A> => runtime.runPromise(effect),
-});
-
-/**
- * Handler factory type for creating MCP handlers with Effect runtime
- */
-export type EffectHandlerFactory<R, Args, Result> = (
-  bridge: EffectMcpBridge<R>
-) => (args: Args) => Promise<Result>;
-
-/**
- * Creates MCP handlers with dependency-injected Effect runtime
- */
-export const createMcpHandlers = <R>(runtime: ManagedRuntime.ManagedRuntime<R, never>) => {
-  const bridge = createEffectMcpBridge(runtime);
-
-  return {
-    bridge,
-    createToolHandler: <Args, Result>(factory: EffectHandlerFactory<R, Args, Result>) =>
-      factory(bridge),
-    createResourceHandler: <Args, Result>(factory: EffectHandlerFactory<R, Args, Result>) =>
-      factory(bridge),
-  };
-};
+export const runWithRuntime = <A, E, R>(
+  runtime: Runtime.Runtime<R>,
+  effect: Effect.Effect<A, E, R>
+): Promise<A> => Runtime.runPromise(runtime)(effect);

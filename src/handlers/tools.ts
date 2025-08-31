@@ -1,24 +1,26 @@
 /**
- * Effect-based MCP Tool handlers for Gremlin server.
- * Uses proper dependency injection instead of global runtime container.
+ * @fileoverview MCP tool handlers for Gremlin graph database operations.
+ *
+ * Registers MCP tools that expose Gremlin functionality including status checks,
+ * schema introspection, query execution, and data import/export operations.
+ * Uses Effect-based dependency injection for service access.
  */
 
-import { Effect } from 'effect';
+import { Effect, Runtime } from 'effect';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { TOOL_NAMES } from '../constants.js';
 import { GremlinService } from '../gremlin/service.js';
-import { type EffectMcpBridge } from './effect-runtime-bridge.js';
 import { importGraphData, exportSubgraph } from '../utils/data-operations.js';
 import {
-  createSimpleToolHandler,
-  createSchemaToolHandler,
-  createQueryResultHandler,
-  createDataOperationHandler,
+  createToolEffect,
+  createStringToolEffect,
+  createQueryEffect,
+  createValidatedToolEffect,
 } from './tool-patterns.js';
 
 /**
- * Input validation schemas
+ * Input validation schemas for tool parameters.
  */
 const importInputSchema = z.object({
   format: z.enum(['graphson', 'csv']),
@@ -41,12 +43,20 @@ const exportInputSchema = z.object({
 });
 
 /**
- * Register Effect-based tool handlers with the MCP server.
- * Uses dependency-injected runtime instead of global container.
+ * Registers all MCP tool handlers with the server.
+ *
+ * @param server - MCP server instance
+ * @param runtime - Effect runtime with Gremlin service
+ *
+ * Registers tools for:
+ * - Graph status monitoring
+ * - Schema introspection and caching
+ * - Query execution
+ * - Data import/export operations
  */
 export function registerEffectToolHandlers(
   server: McpServer,
-  bridge: EffectMcpBridge<GremlinService>
+  runtime: Runtime.Runtime<GremlinService>
 ): void {
   // Get Graph Status
   server.registerTool(
@@ -56,11 +66,14 @@ export function registerEffectToolHandlers(
       description: 'Get the connection status of the Gremlin graph database',
       inputSchema: {},
     },
-    createSimpleToolHandler(
-      service => Effect.map(service.getStatus, statusObj => statusObj.status),
-      'Connection status check failed',
-      true
-    ).bind(null, bridge)
+    () =>
+      createStringToolEffect(
+        runtime,
+        Effect.andThen(GremlinService, service =>
+          Effect.map(service.getStatus, statusObj => statusObj.status)
+        ),
+        'Connection status check failed'
+      )
   );
 
   // Get Graph Schema
@@ -72,10 +85,12 @@ export function registerEffectToolHandlers(
         'Get the complete schema of the graph including vertex labels, edge labels, and relationship patterns',
       inputSchema: {},
     },
-    createSchemaToolHandler(service => service.getSchema, 'Schema retrieval failed').bind(
-      null,
-      bridge
-    )
+    () =>
+      createToolEffect(
+        runtime,
+        Effect.andThen(GremlinService, service => service.getSchema),
+        'Schema retrieval failed'
+      )
   );
 
   // Refresh Schema Cache
@@ -86,12 +101,14 @@ export function registerEffectToolHandlers(
       description: 'Force an immediate refresh of the graph schema cache',
       inputSchema: {},
     },
-    createSimpleToolHandler(
-      service =>
-        Effect.map(service.refreshSchemaCache, () => 'Schema cache refreshed successfully.'),
-      'Failed to refresh schema',
-      true
-    ).bind(null, bridge)
+    () =>
+      createStringToolEffect(
+        runtime,
+        Effect.andThen(GremlinService, service =>
+          Effect.map(service.refreshSchemaCache, () => 'Schema cache refreshed successfully.')
+        ),
+        'Failed to refresh schema'
+      )
   );
 
   // Run Gremlin Query
@@ -104,7 +121,10 @@ export function registerEffectToolHandlers(
         query: z.string().describe('The Gremlin query to execute'),
       },
     },
-    createQueryResultHandler((service, query) => service.executeQuery(query)).bind(null, bridge)
+    (args: unknown) => {
+      const { query } = z.object({ query: z.string() }).parse(args);
+      return createQueryEffect(runtime, query);
+    }
   );
 
   // Import Graph Data
@@ -132,11 +152,12 @@ export function registerEffectToolHandlers(
           .describe('Import options'),
       },
     },
-    createDataOperationHandler(
+    createValidatedToolEffect(
+      runtime,
       importInputSchema,
-      (service, input) => importGraphData(service, input),
+      input => Effect.andThen(GremlinService, service => importGraphData(service, input)),
       'Import Graph Data'
-    ).bind(null, bridge)
+    )
   );
 
   // Export Subgraph
@@ -161,10 +182,11 @@ export function registerEffectToolHandlers(
           .describe('Properties to exclude from the export'),
       },
     },
-    createDataOperationHandler(
+    createValidatedToolEffect(
+      runtime,
       exportInputSchema,
-      (service, input) => exportSubgraph(service, input),
+      input => Effect.andThen(GremlinService, service => exportSubgraph(service, input)),
       'Export Subgraph'
-    ).bind(null, bridge)
+    )
   );
 }

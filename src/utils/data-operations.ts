@@ -1,6 +1,9 @@
 /**
- * Effect-based data operations for import/export functionality.
- * Provides composable operations for graph data management.
+ * @fileoverview Graph data import/export operations with Effect-based composition.
+ *
+ * Provides high-level operations for importing data from various formats (GraphSON, CSV)
+ * and exporting subgraphs based on traversal queries. Handles format validation,
+ * batch processing, and error recovery.
  */
 
 import { Effect } from 'effect';
@@ -16,7 +19,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * Import graph data using Effect patterns
+ * Imports graph data from various formats with comprehensive validation.
+ *
+ * @param service - Gremlin service instance
+ * @param input - Import configuration and data
+ * @returns Effect with success message or import errors
+ *
+ * Supports:
+ * - GraphSON format (native Gremlin JSON)
+ * - CSV format (vertices and edges)
+ *
+ * Features batch processing and optional graph clearing for fresh imports.
  */
 export const importGraphData = (
   service: typeof GremlinService.Service,
@@ -42,7 +55,18 @@ export const importGraphData = (
   });
 
 /**
- * Export subgraph data using Effect patterns
+ * Exports subgraph data based on traversal queries.
+ *
+ * @param service - Gremlin service instance
+ * @param input - Export configuration and traversal query
+ * @returns Effect with exported data in requested format
+ *
+ * Supports multiple output formats:
+ * - GraphSON: Native Gremlin JSON format
+ * - JSON: Simplified JSON structure
+ * - CSV: Tabular format for vertices and edges
+ *
+ * Can filter properties and limit traversal depth.
  */
 export const exportSubgraph = (
   service: typeof GremlinService.Service,

@@ -1,22 +1,30 @@
 /**
- * Effect-based MCP Resource handlers for Gremlin server.
- * Uses proper dependency injection and improved error handling.
+ * @fileoverview MCP resource handlers for graph database information.
+ *
+ * Provides MCP resources that expose real-time graph database status and schema
+ * information. Resources are automatically updated and can be subscribed to by
+ * MCP clients for live monitoring.
  */
 
-import { Effect, pipe } from 'effect';
+import { Effect, pipe, Runtime } from 'effect';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { RESOURCE_URIS, MIME_TYPES } from '../constants.js';
 import { ERROR_PREFIXES } from '../errors.js';
-import { type EffectMcpBridge } from './effect-runtime-bridge.js';
 import { GremlinService } from '../gremlin/service.js';
 
 /**
- * Register Effect-based resource handlers with the MCP server.
- * Improved with better error handling and Effect composition patterns.
+ * Registers MCP resource handlers with the server.
+ *
+ * @param server - MCP server instance
+ * @param runtime - Effect runtime with Gremlin service
+ *
+ * Registers resources for:
+ * - Graph connection status monitoring
+ * - Live schema information access
  */
 export function registerEffectResourceHandlers(
   server: McpServer,
-  bridge: EffectMcpBridge<GremlinService>
+  runtime: Runtime.Runtime<GremlinService>
 ): void {
   // Register status resource
   server.resource(
@@ -27,39 +35,23 @@ export function registerEffectResourceHandlers(
       mimeType: MIME_TYPES.TEXT_PLAIN,
     },
     async () => {
-      try {
-        const result = await bridge.runEffect(
-          pipe(
-            GremlinService,
-            Effect.flatMap(service => service.getStatus),
-            Effect.map(statusObj => statusObj.status),
-            Effect.catchAll(error =>
-              Effect.succeed(`${ERROR_PREFIXES.CONNECTION}: ${error.message}`)
-            )
-          )
-        );
+      const result = await pipe(
+        GremlinService,
+        Effect.andThen(service => service.getStatus),
+        Effect.map(statusObj => statusObj.status),
+        Effect.catchAll(error => Effect.succeed(`${ERROR_PREFIXES.CONNECTION}: ${error}`)),
+        Runtime.runPromise(runtime)
+      );
 
-        return {
-          contents: [
-            {
-              uri: RESOURCE_URIS.STATUS,
-              mimeType: MIME_TYPES.TEXT_PLAIN,
-              text: result,
-            },
-          ],
-        };
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        return {
-          contents: [
-            {
-              uri: RESOURCE_URIS.STATUS,
-              mimeType: MIME_TYPES.TEXT_PLAIN,
-              text: `${ERROR_PREFIXES.CONNECTION}: ${message}`,
-            },
-          ],
-        };
-      }
+      return {
+        contents: [
+          {
+            uri: RESOURCE_URIS.STATUS,
+            mimeType: MIME_TYPES.TEXT_PLAIN,
+            text: result,
+          },
+        ],
+      };
     }
   );
 
@@ -73,36 +65,22 @@ export function registerEffectResourceHandlers(
       mimeType: MIME_TYPES.APPLICATION_JSON,
     },
     async () => {
-      try {
-        const result = await bridge.runEffect(
-          pipe(
-            GremlinService,
-            Effect.flatMap(service => service.getSchema),
-            Effect.catchAll(error => Effect.succeed({ error: error.message }))
-          )
-        );
+      const result = await pipe(
+        GremlinService,
+        Effect.andThen(service => service.getSchema),
+        Effect.catchAll(error => Effect.succeed({ error: String(error) })),
+        Runtime.runPromise(runtime)
+      );
 
-        return {
-          contents: [
-            {
-              uri: RESOURCE_URIS.SCHEMA,
-              mimeType: MIME_TYPES.APPLICATION_JSON,
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        return {
-          contents: [
-            {
-              uri: RESOURCE_URIS.SCHEMA,
-              mimeType: MIME_TYPES.APPLICATION_JSON,
-              text: JSON.stringify({ error: `${ERROR_PREFIXES.SCHEMA}: ${message}` }, null, 2),
-            },
-          ],
-        };
-      }
+      return {
+        contents: [
+          {
+            uri: RESOURCE_URIS.SCHEMA,
+            mimeType: MIME_TYPES.APPLICATION_JSON,
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
     }
   );
 }

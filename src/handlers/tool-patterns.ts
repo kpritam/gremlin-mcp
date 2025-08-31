@@ -1,15 +1,17 @@
 /**
- * Common patterns and utilities for MCP tool handlers.
- * Reduces code duplication and provides consistent error handling.
+ * @fileoverview Reusable patterns for MCP tool handler implementation.
+ *
+ * Provides standardized Effect-based patterns for creating MCP tool handlers
+ * with consistent error handling, response formatting, and runtime execution.
+ * Eliminates boilerplate and ensures uniform behavior across all tools.
  */
 
-import { Effect, pipe } from 'effect';
+import { Effect, pipe, Runtime } from 'effect';
 import { z } from 'zod';
-import { type EffectMcpBridge } from './effect-runtime-bridge.js';
 import { GremlinService } from '../gremlin/service.js';
 
 /**
- * Standard MCP tool response structure
+ * Standard MCP tool response structure following the protocol specification.
  */
 export interface McpToolResponse {
   [x: string]: unknown;
@@ -18,15 +20,10 @@ export interface McpToolResponse {
 }
 
 /**
- * Handler function type for tool operations
- */
-export type ToolHandler<T, R> = (
-  service: typeof GremlinService.Service,
-  input: T
-) => Effect.Effect<R, unknown>;
-
-/**
- * Creates a standardized success response
+ * Creates standardized success response with JSON formatting.
+ *
+ * @param data - Data to include in response
+ * @returns MCP tool response with formatted content
  */
 export const createSuccessResponse = (data: unknown): McpToolResponse => ({
   content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
@@ -48,178 +45,72 @@ export const createErrorResponse = (message: string): McpToolResponse => ({
 });
 
 /**
- * Extract error message from various error types
+ * Simple tool handler that executes an Effect and returns proper MCP response
  */
-const extractErrorMessage = (error: unknown): string => {
-  if (error && typeof error === 'object') {
-    if ('message' in error && typeof error.message === 'string') {
-      return error.message;
-    }
-    if ('left' in error && typeof error.left === 'object' && error.left) {
-      if ('message' in error.left && typeof error.left.message === 'string') {
-        return error.left.message;
-      }
-    }
-  }
-  return String(error);
-};
-
-/**
- * Formats error response with standardized messaging
- */
-export const formatErrorResponse = (error: unknown, operation: string): McpToolResponse => {
-  const message = extractErrorMessage(error);
-  return createErrorResponse(`${operation}: ${message}`);
-};
-
-/**
- * Common handler execution logic with proper error handling
- */
-const executeHandler = async <TInput, TOutput>(
-  bridge: EffectMcpBridge<GremlinService>,
-  handler: ToolHandler<TInput, TOutput>,
-  input: TInput,
-  operationName: string,
-  useStringResponse = false
-): Promise<McpToolResponse> => {
-  const result = await bridge.runEffect(
-    pipe(
-      GremlinService,
-      Effect.flatMap(service => handler(service, input)),
-      Effect.either
-    )
+export const createToolEffect = <A>(
+  runtime: Runtime.Runtime<GremlinService>,
+  effect: Effect.Effect<A, unknown, GremlinService>,
+  operationName: string
+): Promise<McpToolResponse> =>
+  pipe(
+    effect,
+    Effect.map(createSuccessResponse),
+    Effect.catchAll(error => Effect.succeed(createErrorResponse(`${operationName}: ${error}`))),
+    Runtime.runPromise(runtime)
   );
 
-  if (result._tag === 'Left') {
-    return formatErrorResponse(result.left, operationName);
-  }
-
-  // Use string response for simple string results to avoid double JSON encoding
-  if (useStringResponse && typeof result.right === 'string') {
-    return createStringResponse(result.right);
-  }
-
-  return createSuccessResponse(result.right);
-};
-
 /**
- * Generic tool handler factory that handles common patterns
+ * Simple string response tool handler
  */
-export const createToolHandler = <TInput, TOutput>(
-  inputSchema: z.ZodSchema<TInput>,
-  handler: ToolHandler<TInput, TOutput>,
+export const createStringToolEffect = <A>(
+  runtime: Runtime.Runtime<GremlinService>,
+  effect: Effect.Effect<A, unknown, GremlinService>,
   operationName: string
-) => {
-  return async (
-    bridge: EffectMcpBridge<GremlinService>,
-    args: unknown
-  ): Promise<McpToolResponse> => {
-    try {
-      // Validate input
-      const validatedInput = inputSchema.parse(args);
-
-      // Execute handler using common execution logic
-      return await executeHandler(bridge, handler, validatedInput, operationName);
-    } catch (error) {
-      return formatErrorResponse(error, operationName);
-    }
-  };
-};
+): Promise<McpToolResponse> =>
+  pipe(
+    effect,
+    Effect.map(result => createStringResponse(String(result))),
+    Effect.catchAll(error => Effect.succeed(createErrorResponse(`${operationName}: ${error}`))),
+    Runtime.runPromise(runtime)
+  );
 
 /**
- * Simple tool handler for operations that don't need input validation
+ * Query result handler with structured error responses
  */
-export const createSimpleToolHandler = <TOutput>(
-  handler: (service: typeof GremlinService.Service) => Effect.Effect<TOutput, unknown>,
-  errorMessage: string,
-  useStringResponse = false
-) => {
-  return async (bridge: EffectMcpBridge<GremlinService>): Promise<McpToolResponse> => {
-    try {
-      return await executeHandler(
-        bridge,
-        (service: typeof GremlinService.Service) => handler(service),
-        null as never,
-        errorMessage,
-        useStringResponse
-      );
-    } catch (error) {
-      return formatErrorResponse(error, errorMessage);
-    }
-  };
-};
-
-/**
- * Schema tool handler with JSON response formatting
- */
-export const createSchemaToolHandler = (
-  handler: (service: typeof GremlinService.Service) => Effect.Effect<unknown, unknown>,
-  errorMessage: string
-) => createSimpleToolHandler(handler, errorMessage);
-
-/**
- * Query result handler for Gremlin queries
- */
-export const createQueryResultHandler = (
-  handler: (
-    service: typeof GremlinService.Service,
-    query: string
-  ) => Effect.Effect<unknown, unknown>
-) => {
-  return async (
-    bridge: EffectMcpBridge<GremlinService>,
-    args: unknown
-  ): Promise<McpToolResponse> => {
-    try {
-      const { query } = z.object({ query: z.string() }).parse(args);
-
-      const result = await bridge.runEffect(
-        pipe(
-          GremlinService,
-          Effect.flatMap(service => handler(service, query)),
-          Effect.either
-        )
-      );
-
-      if (result._tag === 'Left') {
-        // For query errors, return structured JSON with empty results and error message
-        const errorResult = result as { left: { message: string } };
-        const errorResponse = {
-          results: [],
-          message: `Query failed: ${errorResult.left.message}`,
-        };
-        return createSuccessResponse(errorResponse);
-      }
-
-      return createSuccessResponse(result.right);
-    } catch (error) {
-      // For parsing errors, return structured JSON response
+export const createQueryEffect = (
+  runtime: Runtime.Runtime<GremlinService>,
+  query: string
+): Promise<McpToolResponse> =>
+  pipe(
+    GremlinService,
+    Effect.andThen(service => service.executeQuery(query)),
+    Effect.map(createSuccessResponse),
+    Effect.catchAll(error => {
+      // For query errors, return structured JSON with empty results and error message
       const errorResponse = {
         results: [],
-        message: `Query failed: ${error instanceof Error ? error.message : String(error)}`,
+        message: `Query failed: ${error}`,
       };
-      return createSuccessResponse(errorResponse);
-    }
-  };
-};
+      return Effect.succeed(createSuccessResponse(errorResponse));
+    }),
+    Runtime.runPromise(runtime)
+  );
 
 /**
- * Data operation tool handler
+ * Validated input tool handler
  */
-export const createDataOperationHandler = <TInput>(
-  inputSchema: z.ZodSchema<TInput>,
-  handler: ToolHandler<TInput, string>,
-  operationName: string
-) => {
-  return async (
-    bridge: EffectMcpBridge<GremlinService>,
-    args: unknown
-  ): Promise<McpToolResponse> => {
-    try {
-      const validatedInput = inputSchema.parse(args);
-      return await executeHandler(bridge, handler, validatedInput, operationName);
-    } catch (error) {
-      return formatErrorResponse(error, operationName);
-    }
-  };
-};
+export const createValidatedToolEffect =
+  <T, A>(
+    runtime: Runtime.Runtime<GremlinService>,
+    schema: z.ZodSchema<T>,
+    handler: (input: T) => Effect.Effect<A, unknown, GremlinService>,
+    operationName: string
+  ) =>
+  (args: unknown): Promise<McpToolResponse> =>
+    pipe(
+      Effect.try(() => schema.parse(args)),
+      Effect.andThen(handler),
+      Effect.map(createSuccessResponse),
+      Effect.catchAll(error => Effect.succeed(createErrorResponse(`${operationName}: ${error}`))),
+      Runtime.runPromise(runtime)
+    );

@@ -1,5 +1,9 @@
 /**
- * Graph schema generation with comprehensive analysis and optimizations
+ * @fileoverview Comprehensive graph schema generation with analysis and optimizations.
+ *
+ * Introspects Gremlin graph databases to generate detailed schemas including vertex/edge
+ * labels, properties, cardinality analysis, and relationship patterns. Uses batching and
+ * concurrency control for performance on large graphs.
  */
 
 import { Effect, Duration } from 'effect';
@@ -20,7 +24,7 @@ import type { process } from 'gremlin';
 type GraphTraversalSource = process.GraphTraversalSource;
 
 /**
- * Schema generation count data structure
+ * Schema generation with count data - wrapper for Gremlin groupCount() results.
  */
 interface SchemaCountData {
   /** Mapping of labels to their counts */
@@ -32,7 +36,15 @@ interface SchemaCountData {
 const { inV, outV, label } = gremlin.process.statics;
 
 /**
- * Process items in batches with controlled concurrency
+ * Processes items in controlled batches with concurrency limiting.
+ *
+ * @param items - Array of items to process
+ * @param batchSize - Number of items per batch
+ * @param processor - Effect to run on each item
+ * @returns Effect with all processed results
+ *
+ * Critical for large graphs to avoid overwhelming the database with concurrent queries.
+ * Processes batches sequentially but allows controlled concurrency within each batch.
  */
 const processBatched = <T, R, E>(
   items: T[],
@@ -76,7 +88,18 @@ export const DEFAULT_SCHEMA_CONFIG: SchemaConfig = {
 };
 
 /**
- * Execute the core schema generation logic
+ * Core schema generation logic with parallel analysis streams.
+ *
+ * @param g - Gremlin traversal source
+ * @param config - Schema configuration
+ * @param startTime - Generation start timestamp for metrics
+ * @returns Effect with complete schema
+ *
+ * Pipeline execution:
+ * 1. Discover all vertex and edge labels
+ * 2. Get count data (if enabled)
+ * 3. Run parallel analysis for vertices, edges, and relationship patterns
+ * 4. Assemble final schema with metadata
  */
 const executeSchemaGeneration = (
   g: GraphTraversalSource,
@@ -101,7 +124,14 @@ const executeSchemaGeneration = (
   });
 
 /**
- * Apply timeout to schema generation with proper error handling
+ * Applies timeout protection to schema generation.
+ *
+ * @param schemaGeneration - Effect performing schema generation
+ * @param config - Configuration with timeout settings
+ * @returns Effect with timeout protection applied
+ *
+ * Critical for preventing runaway queries on large or complex graphs.
+ * Converts timeout exceptions to meaningful connection errors.
  */
 const applySchemaTimeout = (
   schemaGeneration: Effect.Effect<GraphSchema, GremlinConnectionError>,
@@ -122,7 +152,18 @@ const applySchemaTimeout = (
 };
 
 /**
- * Generate comprehensive graph schema with optimizations
+ * Main entry point for graph schema generation.
+ *
+ * @param connectionState - Active Gremlin connection with traversal source
+ * @param config - Schema generation configuration options
+ * @returns Effect with complete GraphSchema or connection error
+ *
+ * Orchestrates the complete schema generation pipeline:
+ * 1. Validates connection state
+ * 2. Applies timeout protection
+ * 3. Delegates to core generation logic
+ *
+ * Will timeout if generation exceeds configured time limit (default 30s).
  */
 export const generateGraphSchema = (
   connectionState: ConnectionState,

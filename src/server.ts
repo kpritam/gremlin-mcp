@@ -1,11 +1,16 @@
 #!/usr/bin/env node
 
 /**
- * Effect-based Gremlin MCP Server implementation.
- * Replaces imperative patterns with Effect's functional composition.
+ * @fileoverview MCP server for Apache TinkerPop Gremlin graph databases.
+ *
+ * Provides MCP (Model Context Protocol) tools and resources for interacting with
+ * Gremlin-compatible graph databases including Apache TinkerPop, Amazon Neptune,
+ * Azure Cosmos DB, and others.
+ *
+ * Built with Effect-ts for functional composition and error handling.
  */
 
-import { Effect, Layer, pipe, LogLevel, Logger, Context, Fiber, ManagedRuntime } from 'effect';
+import { Effect, Layer, pipe, LogLevel, Logger, Context, Fiber } from 'effect';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
@@ -13,11 +18,13 @@ import { AppConfig, type AppConfigType } from './config.js';
 import { GremlinServiceLive } from './gremlin/service.js';
 import { registerEffectToolHandlers } from './handlers/tools.js';
 import { registerEffectResourceHandlers } from './handlers/resources.js';
-import { createMcpHandlers } from './handlers/effect-runtime-bridge.js';
+import { createMcpRuntime } from './handlers/effect-runtime-bridge.js';
 import { Errors } from './errors.js';
 
 /**
- * MCP Server Service tag (using latest Effect 3.16.10 patterns)
+ * Service tag for the MCP server instance using Effect 3.x Context.Tag pattern.
+ *
+ * Provides server lifecycle management including start/stop operations.
  */
 class McpServerService extends Context.Tag('McpServerService')<
   McpServerService,
@@ -28,6 +35,17 @@ class McpServerService extends Context.Tag('McpServerService')<
   }
 >() {}
 
+/**
+ * Creates the MCP server service implementation.
+ *
+ * @returns Effect that provides MCP server with registered handlers
+ *
+ * Side effects:
+ * - Creates MCP server instance
+ * - Registers tool and resource handlers
+ * - Sets up managed runtime for dependency injection
+ * - Configures finalizers for cleanup
+ */
 const makeMcpServerService = Effect.gen(function* () {
   const config = yield* AppConfig;
 
@@ -45,19 +63,15 @@ const makeMcpServerService = Effect.gen(function* () {
 
   // Create runtime for handlers
   const serviceLayer = GremlinServiceLive(config);
-  const serviceRuntime = ManagedRuntime.make(serviceLayer);
-  const handlerBridge = createMcpHandlers(serviceRuntime);
+  const runtime = yield* createMcpRuntime(serviceLayer);
 
   // Register handlers with dependency injection
-  registerEffectToolHandlers(server, handlerBridge.bridge);
-  registerEffectResourceHandlers(server, handlerBridge.bridge);
+  registerEffectToolHandlers(server, runtime);
+  registerEffectResourceHandlers(server, runtime);
 
   yield* Effect.logInfo('✅ Handlers registered successfully', {
     service: 'gremlin-mcp',
   });
-
-  // Add finalizer to dispose runtime
-  yield* Effect.addFinalizer(() => Effect.promise(() => serviceRuntime.dispose()));
 
   return {
     server,
@@ -94,13 +108,19 @@ const makeMcpServerService = Effect.gen(function* () {
 const McpServerServiceLive = Layer.effect(McpServerService, makeMcpServerService);
 
 /**
- * Application Layer composition with explicit dependencies
+ * Layer composition providing all application dependencies.
+ *
+ * @param config - Application configuration
+ * @returns Combined layer with Gremlin service and MCP server
  */
 const AppLayer = (config: AppConfigType) =>
   Layer.mergeAll(GremlinServiceLive(config), McpServerServiceLive);
 
 /**
- * Main application program
+ * Main application Effect.
+ *
+ * Orchestrates server startup, configuration loading, and graceful shutdown.
+ * Uses Effect.never to keep the server running indefinitely.
  */
 const program = Effect.gen(function* () {
   // Get configuration
@@ -127,7 +147,10 @@ const program = Effect.gen(function* () {
 });
 
 /**
- * Safely serialize log data to JSON with better error handling
+ * Safely serializes objects to JSON with fallback error handling.
+ *
+ * @param obj - Object to serialize
+ * @returns JSON string, with error metadata if serialization fails
  */
 const safeJsonStringify = (obj: unknown): string =>
   pipe(
@@ -145,7 +168,13 @@ const safeJsonStringify = (obj: unknown): string =>
   );
 
 /**
- * Effect-based structured logging that always writes to stderr
+ * Structured logging Effect that writes to stderr.
+ *
+ * @param logData - Structured log data object
+ * @returns Effect that writes log entry to stderr
+ *
+ * Note: All logging goes to stderr to avoid interfering with MCP JSON-RPC
+ * communication on stdout.
  */
 const logToStderr = (logData: Record<string, unknown>): Effect.Effect<void> =>
   Effect.sync(() => {

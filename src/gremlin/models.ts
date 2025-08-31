@@ -1,22 +1,25 @@
 /**
- * Data Models Module for Gremlin Graph Database.
+ * @fileoverview Comprehensive data models for Gremlin graph database interfaces.
  *
- * This module defines the core data structures and types used throughout the Gremlin
- * graph database interface. It includes models for graph schema definitions and
- * knowledge graph components. Compatible with any Gremlin-enabled database including
- * Apache TinkerPop, Amazon Neptune, Azure Cosmos DB, etc.
+ * Defines type-safe schemas using Zod for all graph database entities including
+ * vertices, edges, properties, and schema definitions. Compatible with all
+ * Gremlin-enabled databases (TinkerPop, Neptune, Cosmos DB, etc.).
  *
- * The models use Zod for clean, type-safe data structures that represent
- * both the graph structure and its contents with runtime validation.
+ * Key features:
+ * - Runtime validation with detailed error messages
+ * - Discriminated unions for different result types
+ * - Comprehensive input validation for data operations
+ * - Schema metadata and optimization settings
  */
 
 import { z } from 'zod';
 
 /**
- * Represents a property definition for nodes and relationships in the graph.
+ * Property definition for graph elements (vertices and edges).
  *
- * Properties are key-value pairs that can be attached to both nodes and
- * relationships, storing additional metadata about these graph elements.
+ * @description Represents metadata about properties that can be attached to graph elements.
+ * Includes type information, cardinality constraints, and enum detection for
+ * categorical properties.
  */
 export const PropertySchema = z.object({
   /** The name of the property */
@@ -221,7 +224,11 @@ export const GremlinPropertySchema = z.object({
 export type GremlinProperty = z.infer<typeof GremlinPropertySchema>;
 
 /**
- * Discriminated union for structured Gremlin result types
+ * Discriminated union schema for structured Gremlin result types.
+ *
+ * @description Uses type discriminators to enable precise TypeScript inference
+ * and runtime validation. Critical for type-safe handling of heterogeneous
+ * query results.
  */
 export const GremlinStructuredResultSchema = z.discriminatedUnion('type', [
   GremlinVertexSchema,
@@ -245,7 +252,16 @@ const GenericObjectSchema = z
 const ValidatedArraySchema: z.ZodType<unknown[]> = z.lazy(() => z.array(GremlinResultItemSchema));
 
 /**
- * Union type for all possible Gremlin result types (including primitives)
+ * Comprehensive union type for all possible Gremlin query results.
+ *
+ * @description Handles the full spectrum of Gremlin query results including:
+ * - Structured graph elements (vertices, edges, paths, properties)
+ * - Property maps from valueMap() queries
+ * - Primitive values (strings, numbers, booleans)
+ * - Arrays and nested structures
+ * - Generic objects without type discriminators
+ *
+ * Uses recursive validation for complex nested results.
  */
 export const GremlinResultItemSchema = z.union([
   GremlinStructuredResultSchema,

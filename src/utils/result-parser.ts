@@ -1,8 +1,9 @@
 /**
- * Gremlin result parsing utilities.
+ * @fileoverview Gremlin result parsing with type-safe transformations.
  *
- * This module provides idiomatic parsing of Gremlin query results into
- * type-safe, serializable objects using Zod schemas.
+ * Handles the complex task of converting raw Gremlin driver results into standardized,
+ * serializable objects. Manages various result formats from different Gremlin
+ * implementations and normalizes them for MCP consumption.
  */
 
 import { z } from 'zod';
@@ -10,8 +11,14 @@ import { type GremlinResultItem, GremlinResultItemSchema } from '../gremlin/mode
 import { calculateResultMetadata, type ResultMetadata } from './result-metadata.js';
 
 /**
- * Type guard for objects with a specific constructor name.
- * This is used to identify native Gremlin types from the driver.
+ * Type guard for objects with specific constructor names.
+ *
+ * @param obj - Object to check
+ * @param name - Expected constructor name
+ * @returns True if object has the specified constructor name
+ *
+ * Critical for identifying native Gremlin driver types (Vertex, Edge, etc.)
+ * which need special handling during result transformation.
  */
 function hasConstructorName(
   obj: unknown,
@@ -92,11 +99,18 @@ function isRawProperty(obj: unknown): obj is RawProperty {
 }
 
 /**
- * A Zod schema that preprocesses raw Gremlin results before validation.
+ * Zod schema with preprocessing for raw Gremlin results.
  *
- * It transforms Gremlin-specific driver types (like Vertex, Edge, Path)
- * and data structures (like Map) into a standard format that can be
- * validated against the `GremlinResultItemSchema`.
+ * @description Transforms native Gremlin driver types into standardized objects before validation.
+ *
+ * Preprocessing pipeline:
+ * 1. Detects and transforms native driver types (Vertex, Edge, Path, Property)
+ * 2. Converts ES6 Maps to plain objects
+ * 3. Adds type discriminators for schema validation
+ * 4. Handles various result formats from different Gremlin implementations
+ *
+ * Critical for cross-driver compatibility - different Gremlin servers return
+ * results in slightly different formats.
  */
 const GremlinPreprocessedResultSchema = z.preprocess((arg: unknown) => {
   // Pass through primitives and null/undefined, which Zod can handle directly.
@@ -154,7 +168,12 @@ const GremlinPreprocessedResultSchema = z.preprocess((arg: unknown) => {
 }, GremlinResultItemSchema);
 
 /**
- * Parses a single raw Gremlin result item into a typed, serializable object.
+ * Parses a single raw Gremlin result into a typed, serializable object.
+ *
+ * @param rawResult - Raw result item from Gremlin query
+ * @returns Validated and typed result item
+ *
+ * Uses the preprocessing schema to handle driver-specific transformations.
  */
 export function parseGremlinResultItem(rawResult: unknown): GremlinResultItem {
   return GremlinPreprocessedResultSchema.parse(rawResult);
@@ -168,7 +187,13 @@ export function parseGremlinResults(rawResults: unknown[]): GremlinResultItem[] 
 }
 
 /**
- * Enhanced result parser that provides detailed type information and metadata.
+ * Enhanced result parser with comprehensive metadata generation.
+ *
+ * @param rawResults - Array of raw Gremlin query results
+ * @returns Parsed results with detailed type and structure metadata
+ *
+ * Provides additional context about result composition, useful for
+ * understanding query output patterns and debugging.
  */
 export function parseGremlinResultsWithMetadata(rawResults: unknown[]): {
   results: GremlinResultItem[];
